@@ -1,0 +1,447 @@
+{
+  "schemaVersion": 1,
+  "revision": "2026-07-30.4",
+  "provenance": {
+    "baseline": "AdLock 1.4.7 curated core, privacy, redirect, and navigation host lists",
+    "reviewed": "2026-07-30",
+    "policy": "Use dedicated advertising, tracking, popup, push, and mining hostnames; exclude shared media and storage CDNs. Broad endpoint patterns are strict-mode only."
+  },
+  "resourceProfiles": {
+    "allSubresources": [
+      "sub_frame",
+      "stylesheet",
+      "script",
+      "image",
+      "font",
+      "object",
+      "xmlhttprequest",
+      "ping",
+      "csp_report",
+      "media",
+      "websocket",
+      "webtransport",
+      "webbundle",
+      "other"
+    ],
+    "mainFrame": [
+      "main_frame"
+    ]
+  },
+  "categories": {
+    "ad": {
+      "tier": "always",
+      "ruleId": 5000,
+      "priority": 2,
+      "domainType": "thirdParty",
+      "resourceProfile": "allSubresources",
+      "domains": [
+        "2mdn.net",
+        "adform.net",
+        "adnxs.com",
+        "adsrvr.org",
+        "amazon-adsystem.com",
+        "bidswitch.net",
+        "casalemedia.com",
+        "criteo.com",
+        "criteo.net",
+        "doubleclick.net",
+        "googleadservices.com",
+        "googlesyndication.com",
+        "lijit.com",
+        "media.net",
+        "openx.net",
+        "pubmatic.com",
+        "rubiconproject.com",
+        "smartadserver.com"
+      ]
+    },
+    "miner": {
+      "tier": "always",
+      "ruleId": 5040,
+      "priority": 5,
+      "resourceProfile": "allSubresources",
+      "domains": [
+        "authedmine.com",
+        "coin-hive.com",
+        "coinhive.com",
+        "coinimp.com",
+        "coinnebula.com",
+        "crypto-loot.com",
+        "cryptoloot.pro",
+        "deepminer.com",
+        "jsecoin.com",
+        "mineralt.io",
+        "minero.cc",
+        "webmine.cz",
+        "webminepool.com",
+        "webminerpool.com"
+      ]
+    },
+    "native": {
+      "tier": "always",
+      "ruleId": 5020,
+      "priority": 2,
+      "domainType": "thirdParty",
+      "resourceProfile": "allSubresources",
+      "domains": [
+        "adblade.com",
+        "content.ad",
+        "dianomi.com",
+        "mgid.com",
+        "mgidcdn.com",
+        "nativo.com",
+        "outbrain.com",
+        "plista.com",
+        "revcontent.com",
+        "sharethrough.com",
+        "taboola.com",
+        "triplelift.com",
+        "yieldmo.com",
+        "zemanta.com"
+      ]
+    },
+    "popup": {
+      "tier": "always",
+      "ruleId": 5030,
+      "priority": 5,
+      "domainType": "thirdParty",
+      "resourceProfile": "allSubresources",
+      "domains": [
+        "405kk.com",
+        "484r.com",
+        "ad-maven.com",
+        "adangle.online",
+        "adsterra.com",
+        "agl002.online",
+        "aifpleasurebeh.org",
+        "almagracockles.cyou",
+        "arabalative.shop",
+        "arylblurry.shop",
+        "browpotware.com",
+        "clickadu.com",
+        "cloudnestra.com",
+        "cloudorchestranova.com",
+        "evadav.com",
+        "ffb7df5a878b59e42e257c042f54bed2.com",
+        "galaksion.com",
+        "hilltopads.net",
+        "hippinglawns.com",
+        "kettledroopingcontinuation.com",
+        "l33xmeqmetu36p2.cfd",
+        "llvpn.com",
+        "luugy.com",
+        "monetag.com",
+        "moonlighthathel.org",
+        "motelmute.com",
+        "onclickalgo.com",
+        "onclickperformance.com",
+        "onclickprediction.com",
+        "pipaffiliates.com",
+        "popads.net",
+        "popcash.net",
+        "portalfluently.com",
+        "propellerads.com",
+        "protrafficinspector.com",
+        "pushground.com",
+        "realizationnewestfangs.com",
+        "richads.com",
+        "snippedpontils.com",
+        "storageimagedisplay.com",
+        "trafficjunky.net",
+        "weevilsmoggyshoguns.cyou",
+        "workdeadlinededicate.com",
+        "xbeat.space",
+        "zeropark.com"
+      ]
+    },
+    "push": {
+      "tier": "strict",
+      "ruleId": 6000,
+      "priority": 2,
+      "domainType": "thirdParty",
+      "resourceProfile": "allSubresources",
+      "domains": [
+        "aimtell.com",
+        "izooto.com",
+        "onesignal.com",
+        "onesignalcdn.com",
+        "pushalert.co",
+        "pushcrew.com",
+        "pushengage.com",
+        "webpushr.com",
+        "wonderpush.com"
+      ]
+    },
+    "tracker": {
+      "tier": "strict",
+      "ruleId": 6010,
+      "priority": 2,
+      "domainType": "thirdParty",
+      "resourceProfile": "allSubresources",
+      "domains": [
+        "2o7.net",
+        "adjust.com",
+        "adsafeprotected.com",
+        "amplitude.com",
+        "analytics.tiktok.com",
+        "analytics.twitter.com",
+        "analytics.yahoo.com",
+        "appsflyer.com",
+        "appsflyersdk.com",
+        "bat.bing.com",
+        "bluekai.com",
+        "branch.io",
+        "business-api.tiktok.com",
+        "chartbeat.com",
+        "clarity.ms",
+        "cloudflareinsights.com",
+        "contentsquare.net",
+        "crazyegg.com",
+        "ct.pinterest.com",
+        "decibelinsight.net",
+        "demdex.net",
+        "dtscout.com",
+        "exelator.com",
+        "facebook.net",
+        "fullstory.com",
+        "google-analytics.com",
+        "heapanalytics.com",
+        "histats.com",
+        "hotjar.com",
+        "kissmetrics.io",
+        "kochava.com",
+        "krxd.net",
+        "logrocket.com",
+        "luckyorange.com",
+        "mathtag.com",
+        "mixpanel.com",
+        "moatads.com",
+        "mouseflow.com",
+        "mxpnl.com",
+        "newrelic.com",
+        "omtrdc.net",
+        "posthog.com",
+        "quantserve.com",
+        "rudderlabs.com",
+        "rudderstack.com",
+        "scorecardresearch.com",
+        "segment.com",
+        "segment.io",
+        "singular.net",
+        "smartlook.com",
+        "snap.licdn.com",
+        "static.ads-twitter.com",
+        "tr.line.me",
+        "tr.snapchat.com"
+      ]
+    },
+    "video": {
+      "tier": "always",
+      "ruleId": 5010,
+      "priority": 2,
+      "domainType": "thirdParty",
+      "resourceProfile": "allSubresources",
+      "domains": [
+        "adap.tv",
+        "adswizz.com",
+        "aniview.com",
+        "auditude.com",
+        "brightline.tv",
+        "cedato.com",
+        "freewheel.tv",
+        "fwmrm.net",
+        "innovid.com",
+        "innovid.tv",
+        "lkqd.net",
+        "spotx.tv",
+        "spotxchange.com",
+        "springserve.com",
+        "streamrail.com",
+        "teads.tv",
+        "tremorhub.com",
+        "tremorvideo.com",
+        "unrulymedia.com",
+        "videologygroup.com"
+      ]
+    }
+  },
+  "aggressiveEndpoints": [
+    {
+      "key": "all-third-party-pings",
+      "ruleId": 6100,
+      "priority": 1,
+      "domainType": "thirdParty",
+      "resourceTypes": [
+        "ping"
+      ]
+    },
+    {
+      "key": "generic-third-party-beacon-image",
+      "ruleId": 6110,
+      "priority": 2,
+      "domainType": "thirdParty",
+      "regexFilter": "^https?://[^/]+/([^/?#]+/)*(tracking[-_]?pixel|track[-_]?pixel|pixel\\.gif|beacon\\.gif)([?#]|$)",
+      "isUrlFilterCaseSensitive": false,
+      "resourceTypes": [
+        "image",
+        "ping",
+        "xmlhttprequest"
+      ]
+    },
+    {
+      "key": "generic-third-party-vast-vmap-path",
+      "ruleId": 6120,
+      "priority": 2,
+      "domainType": "thirdParty",
+      "regexFilter": "^https?://[^/]+/([^/?#]+/)*(vast[0-9]*|vmap)([/?#._-]|$)",
+      "isUrlFilterCaseSensitive": false,
+      "resourceTypes": [
+        "sub_frame",
+        "xmlhttprequest",
+        "media",
+        "other"
+      ]
+    },
+    {
+      "key": "generic-third-party-video-ad-path",
+      "ruleId": 6130,
+      "priority": 2,
+      "domainType": "thirdParty",
+      "regexFilter": "^https?://[^/]+/([^/?#]+/)*(video[-_]?ads?|ad[-_]?tag)([/?#._-]|$)",
+      "isUrlFilterCaseSensitive": false,
+      "resourceTypes": [
+        "sub_frame",
+        "xmlhttprequest",
+        "media",
+        "other"
+      ]
+    },
+    {
+      "key": "generic-third-party-video-tag-query",
+      "ruleId": 6140,
+      "priority": 2,
+      "domainType": "thirdParty",
+      "regexFilter": "^https?://[^/?#]+/[^#]*[?&](ad_?tag|adtag|vast|vmap)(_url)?=",
+      "isUrlFilterCaseSensitive": false,
+      "resourceTypes": [
+        "sub_frame",
+        "xmlhttprequest",
+        "media",
+        "other"
+      ]
+    },
+    {
+      "key": "generic-third-party-clickunder-script",
+      "ruleId": 6150,
+      "priority": 2,
+      "domainType": "thirdParty",
+      "regexFilter": "^https?://[^/]+/([^/?#]+/)*(clickunder|popunder)([._-][^/?#]+)?\\.js([?#]|$)",
+      "isUrlFilterCaseSensitive": false,
+      "resourceTypes": [
+        "script"
+      ]
+    },
+    {
+      "key": "generic-miner-payload",
+      "ruleId": 6160,
+      "priority": 5,
+      "regexFilter": "^https?://[^/]+/([^/?#]+/)*(coinhive|cryptonight|cryptoloot|webminer|webminepool)([._-][^/?#]+)?\\.(js|wasm)([?#]|$)",
+      "isUrlFilterCaseSensitive": false,
+      "resourceTypes": [
+        "script",
+        "xmlhttprequest",
+        "other"
+      ]
+    },
+    {
+      "key": "google-tag-manager-container",
+      "ruleId": 6170,
+      "priority": 2,
+      "domainType": "thirdParty",
+      "urlFilter": "||www.googletagmanager.com/gtm.js",
+      "resourceTypes": [
+        "script"
+      ]
+    },
+    {
+      "key": "google-tag-manager-gtag",
+      "ruleId": 6180,
+      "priority": 2,
+      "domainType": "thirdParty",
+      "urlFilter": "||www.googletagmanager.com/gtag/js",
+      "resourceTypes": [
+        "script"
+      ]
+    },
+    {
+      "key": "meta-pixel",
+      "ruleId": 6190,
+      "priority": 2,
+      "domainType": "thirdParty",
+      "urlFilter": "||www.facebook.com/tr^",
+      "resourceTypes": [
+        "image",
+        "xmlhttprequest",
+        "ping"
+      ]
+    },
+    {
+      "key": "generic-third-party-pagead-path",
+      "ruleId": 6200,
+      "priority": 1,
+      "domainType": "thirdParty",
+      "urlFilter": "/pagead/",
+      "resourceTypes": [
+        "sub_frame",
+        "script",
+        "image",
+        "xmlhttprequest"
+      ]
+    },
+    {
+      "key": "generic-third-party-adserver-path",
+      "ruleId": 6210,
+      "priority": 1,
+      "domainType": "thirdParty",
+      "urlFilter": "/adserver/",
+      "resourceTypes": [
+        "sub_frame",
+        "script",
+        "image",
+        "xmlhttprequest"
+      ]
+    },
+    {
+      "key": "attribution-reporting-endpoint",
+      "ruleId": 6220,
+      "priority": 3,
+      "urlFilter": "/.well-known/attribution-reporting/",
+      "resourceTypes": [
+        "xmlhttprequest",
+        "ping",
+        "other"
+      ]
+    },
+    {
+      "key": "private-aggregation-reporting-endpoint",
+      "ruleId": 6230,
+      "priority": 3,
+      "urlFilter": "/.well-known/private-aggregation/",
+      "resourceTypes": [
+        "xmlhttprequest",
+        "ping",
+        "other"
+      ]
+    }
+  ],
+  "redirects": {
+    "ruleId": 7000,
+    "priority": 10,
+    "resourceProfile": "mainFrame",
+    "categories": [
+      "ad",
+      "native",
+      "popup"
+    ]
+  }
+}

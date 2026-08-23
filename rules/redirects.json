@@ -1,0 +1,11 @@
+[
+  {
+    "id": 9,
+    "priority": 3,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||net77.cc/you-idiot.html",
+      "resourceTypes": ["main_frame", "sub_frame"]
+    }
+  }
+]

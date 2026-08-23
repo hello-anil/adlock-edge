@@ -1,0 +1,36 @@
+/* Higher-recall cosmetic rules enabled only by Strict protection. */
+:where(
+  [aria-label*="advertisement" i],
+  [aria-label="sponsored" i],
+  [data-sponsored="true" i],
+  [data-promoted="true" i],
+  [data-ad-background],
+  [data-companion-ad],
+  [class~="advertisement" i],
+  [class~="ad-container" i],
+  [class~="ad_container" i],
+  [class~="ad-wrapper" i],
+  [class~="ad_wrapper" i],
+  [class~="ad-slot" i],
+  [class~="ad_slot" i],
+  [class~="ad-banner" i],
+  [class~="ad_banner" i],
+  [class~="ad-interstitial" i],
+  [class~="interstitial-ad" i],
+  [class~="floating-ad" i],
+  [class~="companion-ad" i],
+  [class~="native-ad" i],
+  [class~="sponsored-content" i],
+  [id^="ad-container-" i],
+  [id^="ad-slot-" i],
+  iframe[src*="doubleclick.net" i],
+  iframe[src*="googlesyndication.com" i],
+  iframe[src*="googleadservices.com" i],
+  iframe[src*="/pagead/" i],
+  iframe[src*="/adserver/" i]
+) {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AdLock redirect fixtures</title>
+  <style>
+    body { max-width: 760px; margin: 40px auto; font: 16px/1.5 system-ui; }
+    section { margin: 18px 0; padding: 18px; border: 1px solid #ccd2df; border-radius: 12px; }
+    a, button { display: inline-block; margin: 8px 12px 8px 0; padding: 9px 12px; }
+    #result { font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>Redirect-ad fixtures</h1>
+  <p>Use this page with the unpacked extension enabled.</p>
+
+  <section>
+    <h2>Expected to be blocked</h2>
+    <a href="https://doubleclick.net/offer" target="_blank">Known ad-network destination</a>
+    <a href="/redirect?url=https%3A%2F%2Fadvertiser.example%2Foffer" rel="nofollow sponsored" target="_blank">Sponsored redirect wrapper</a>
+    <button id="popupButton" type="button">Scripted ad popup</button>
+  </section>
+
+  <section>
+    <h2>Expected to remain allowed</h2>
+    <a href="https://example.com/" target="_blank">Ordinary external link</a>
+    <a href="/redirect?url=https%3A%2F%2Flogin.example.net%2Fcallback">Ordinary login redirect</a>
+  </section>
+
+  <p id="result" aria-live="polite"></p>
+  <script src="redirect-fixtures.js"></script>
+</body>
+</html>

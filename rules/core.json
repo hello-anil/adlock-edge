@@ -1,0 +1,50 @@
+[
+  {
+    "id": 4,
+    "priority": 2,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||amd-cdn-1.ffb7df5a878b59e42e257c042f54bed2.com/",
+      "resourceTypes": ["media", "xmlhttprequest"]
+    }
+  },
+  {
+    "id": 5,
+    "priority": 2,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||agl002.online/",
+      "resourceTypes": ["script", "xmlhttprequest", "media", "image"]
+    }
+  },
+  {
+    "id": 6,
+    "priority": 2,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||xbeat.space/",
+      "resourceTypes": ["script", "xmlhttprequest", "image"]
+    }
+  },
+  {
+    "id": 14,
+    "priority": 5,
+    "action": { "type": "block" },
+    "condition": {
+      "regexFilter": "^https?://[^/]+/([^/?#]+/)*(coinhive|cryptonight|cryptoloot|webminer|webminepool)([._-][^/?#]+)?\\.(js|wasm)([?#]|$)",
+      "isUrlFilterCaseSensitive": false,
+      "resourceTypes": ["script", "xmlhttprequest", "other"]
+    }
+  },
+  {
+    "id": 16,
+    "priority": 2,
+    "action": { "type": "block" },
+    "condition": {
+      "regexFilter": "^https?://[^/]+/([^/?#]+/)*(clickunder|popunder)([._-][^/?#]+)?\\.js([?#]|$)",
+      "isUrlFilterCaseSensitive": false,
+      "domainType": "thirdParty",
+      "resourceTypes": ["script"]
+    }
+  }
+]

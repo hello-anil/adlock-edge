@@ -1,0 +1,59 @@
+.aas-placeholder {
+  box-sizing: border-box !important;
+  display: block !important;
+  width: 100% !important;
+  min-height: 32px !important;
+  margin: 8px 0 !important;
+  padding: 8px 12px !important;
+  border: 1px dashed rgba(93, 110, 246, 0.38) !important;
+  border-radius: 8px !important;
+  background: rgba(93, 110, 246, 0.06) !important;
+  color: #687087 !important;
+  font: 500 12px/1.3 system-ui, sans-serif !important;
+  text-align: center !important;
+}
+
+.aas-redirect-notice {
+  all: initial !important;
+  position: fixed !important;
+  z-index: 2147483647 !important;
+  right: 18px !important;
+  bottom: 18px !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto auto !important;
+  align-items: center !important;
+  gap: 14px !important;
+  width: min(430px, calc(100vw - 36px)) !important;
+  box-sizing: border-box !important;
+  padding: 14px !important;
+  border: 1px solid rgba(134, 146, 255, 0.35) !important;
+  border-radius: 13px !important;
+  background: #11172a !important;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45) !important;
+  color: #f3f5ff !important;
+  font: 500 12px/1.35 system-ui, sans-serif !important;
+}
+
+.aas-redirect-notice div,
+.aas-redirect-notice strong,
+.aas-redirect-notice span {
+  all: revert !important;
+  display: block !important;
+  font-family: system-ui, sans-serif !important;
+}
+
+.aas-redirect-notice strong { margin-bottom: 3px !important; color: #f3f5ff !important; font-size: 13px !important; }
+.aas-redirect-notice span { color: #9da7c2 !important; font-size: 11px !important; }
+
+.aas-redirect-notice button {
+  all: initial !important;
+  padding: 8px 11px !important;
+  border-radius: 8px !important;
+  background: #5d6ef6 !important;
+  color: white !important;
+  font: 650 11px/1 system-ui, sans-serif !important;
+  cursor: pointer !important;
+}
+
+.aas-redirect-notice button:disabled { opacity: 0.55 !important; cursor: wait !important; }
+.aas-redirect-notice .aas-redirect-dismiss { padding: 6px !important; background: transparent !important; color: #8993ae !important; font-size: 18px !important; }

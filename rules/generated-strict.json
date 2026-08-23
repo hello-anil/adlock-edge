@@ -1,0 +1,344 @@
+[
+  {
+    "id": 6000,
+    "priority": 2,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "requestDomains": [
+        "aimtell.com",
+        "izooto.com",
+        "onesignal.com",
+        "onesignalcdn.com",
+        "pushalert.co",
+        "pushcrew.com",
+        "pushengage.com",
+        "webpushr.com",
+        "wonderpush.com"
+      ],
+      "domainType": "thirdParty",
+      "resourceTypes": [
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "object",
+        "xmlhttprequest",
+        "ping",
+        "csp_report",
+        "media",
+        "websocket",
+        "webtransport",
+        "webbundle",
+        "other"
+      ]
+    }
+  },
+  {
+    "id": 6010,
+    "priority": 2,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "requestDomains": [
+        "2o7.net",
+        "adjust.com",
+        "adsafeprotected.com",
+        "amplitude.com",
+        "analytics.tiktok.com",
+        "analytics.twitter.com",
+        "analytics.yahoo.com",
+        "appsflyer.com",
+        "appsflyersdk.com",
+        "bat.bing.com",
+        "bluekai.com",
+        "branch.io",
+        "business-api.tiktok.com",
+        "chartbeat.com",
+        "clarity.ms",
+        "cloudflareinsights.com",
+        "contentsquare.net",
+        "crazyegg.com",
+        "ct.pinterest.com",
+        "decibelinsight.net",
+        "demdex.net",
+        "dtscout.com",
+        "exelator.com",
+        "facebook.net",
+        "fullstory.com",
+        "google-analytics.com",
+        "heapanalytics.com",
+        "histats.com",
+        "hotjar.com",
+        "kissmetrics.io",
+        "kochava.com",
+        "krxd.net",
+        "logrocket.com",
+        "luckyorange.com",
+        "mathtag.com",
+        "mixpanel.com",
+        "moatads.com",
+        "mouseflow.com",
+        "mxpnl.com",
+        "newrelic.com",
+        "omtrdc.net",
+        "posthog.com",
+        "quantserve.com",
+        "rudderlabs.com",
+        "rudderstack.com",
+        "scorecardresearch.com",
+        "segment.com",
+        "segment.io",
+        "singular.net",
+        "smartlook.com",
+        "snap.licdn.com",
+        "static.ads-twitter.com",
+        "tr.line.me",
+        "tr.snapchat.com"
+      ],
+      "domainType": "thirdParty",
+      "resourceTypes": [
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "object",
+        "xmlhttprequest",
+        "ping",
+        "csp_report",
+        "media",
+        "websocket",
+        "webtransport",
+        "webbundle",
+        "other"
+      ]
+    }
+  },
+  {
+    "id": 6100,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "domainType": "thirdParty",
+      "resourceTypes": [
+        "ping"
+      ]
+    }
+  },
+  {
+    "id": 6110,
+    "priority": 2,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "regexFilter": "^https?://[^/]+/([^/?#]+/)*(tracking[-_]?pixel|track[-_]?pixel|pixel\\.gif|beacon\\.gif)([?#]|$)",
+      "isUrlFilterCaseSensitive": false,
+      "domainType": "thirdParty",
+      "resourceTypes": [
+        "image",
+        "ping",
+        "xmlhttprequest"
+      ]
+    }
+  },
+  {
+    "id": 6120,
+    "priority": 2,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "regexFilter": "^https?://[^/]+/([^/?#]+/)*(vast[0-9]*|vmap)([/?#._-]|$)",
+      "isUrlFilterCaseSensitive": false,
+      "domainType": "thirdParty",
+      "resourceTypes": [
+        "sub_frame",
+        "xmlhttprequest",
+        "media",
+        "other"
+      ]
+    }
+  },
+  {
+    "id": 6130,
+    "priority": 2,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "regexFilter": "^https?://[^/]+/([^/?#]+/)*(video[-_]?ads?|ad[-_]?tag)([/?#._-]|$)",
+      "isUrlFilterCaseSensitive": false,
+      "domainType": "thirdParty",
+      "resourceTypes": [
+        "sub_frame",
+        "xmlhttprequest",
+        "media",
+        "other"
+      ]
+    }
+  },
+  {
+    "id": 6140,
+    "priority": 2,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "regexFilter": "^https?://[^/?#]+/[^#]*[?&](ad_?tag|adtag|vast|vmap)(_url)?=",
+      "isUrlFilterCaseSensitive": false,
+      "domainType": "thirdParty",
+      "resourceTypes": [
+        "sub_frame",
+        "xmlhttprequest",
+        "media",
+        "other"
+      ]
+    }
+  },
+  {
+    "id": 6150,
+    "priority": 2,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "regexFilter": "^https?://[^/]+/([^/?#]+/)*(clickunder|popunder)([._-][^/?#]+)?\\.js([?#]|$)",
+      "isUrlFilterCaseSensitive": false,
+      "domainType": "thirdParty",
+      "resourceTypes": [
+        "script"
+      ]
+    }
+  },
+  {
+    "id": 6160,
+    "priority": 5,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "regexFilter": "^https?://[^/]+/([^/?#]+/)*(coinhive|cryptonight|cryptoloot|webminer|webminepool)([._-][^/?#]+)?\\.(js|wasm)([?#]|$)",
+      "isUrlFilterCaseSensitive": false,
+      "resourceTypes": [
+        "script",
+        "xmlhttprequest",
+        "other"
+      ]
+    }
+  },
+  {
+    "id": 6170,
+    "priority": 2,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "||www.googletagmanager.com/gtm.js",
+      "domainType": "thirdParty",
+      "resourceTypes": [
+        "script"
+      ]
+    }
+  },
+  {
+    "id": 6180,
+    "priority": 2,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "||www.googletagmanager.com/gtag/js",
+      "domainType": "thirdParty",
+      "resourceTypes": [
+        "script"
+      ]
+    }
+  },
+  {
+    "id": 6190,
+    "priority": 2,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "||www.facebook.com/tr^",
+      "domainType": "thirdParty",
+      "resourceTypes": [
+        "image",
+        "xmlhttprequest",
+        "ping"
+      ]
+    }
+  },
+  {
+    "id": 6200,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "/pagead/",
+      "domainType": "thirdParty",
+      "resourceTypes": [
+        "sub_frame",
+        "script",
+        "image",
+        "xmlhttprequest"
+      ]
+    }
+  },
+  {
+    "id": 6210,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "/adserver/",
+      "domainType": "thirdParty",
+      "resourceTypes": [
+        "sub_frame",
+        "script",
+        "image",
+        "xmlhttprequest"
+      ]
+    }
+  },
+  {
+    "id": 6220,
+    "priority": 3,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "/.well-known/attribution-reporting/",
+      "resourceTypes": [
+        "xmlhttprequest",
+        "ping",
+        "other"
+      ]
+    }
+  },
+  {
+    "id": 6230,
+    "priority": 3,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "/.well-known/private-aggregation/",
+      "resourceTypes": [
+        "xmlhttprequest",
+        "ping",
+        "other"
+      ]
+    }
+  }
+]

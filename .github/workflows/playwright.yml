@@ -1,0 +1,35 @@
+name: Production checks
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+jobs:
+  test:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: lts/*
+    - name: Install dependencies
+      run: npm ci
+    - name: Install Playwright Browsers
+      run: npx playwright install --with-deps
+    - name: Run unit and package validation
+      run: npm test
+    - name: Assert performance budgets
+      run: npm run benchmark:assert
+    - name: Run extension UI smoke tests
+      run: npx playwright test --project=chromium
+    - name: Build release package
+      run: npm run release:package
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: adlock-release-${{ github.sha }}
+        path: |
+          dist/*.zip
+          playwright-report/
+        retention-days: 30

@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AdLock settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="page">
+    <aside>
+      <div class="logo"><img src="../assets/icons/icon-48.png" alt=""><strong>AdLock</strong></div>
+      <nav aria-label="Settings sections">
+        <a href="#protection">Protection</a>
+        <a href="#exceptions">Exceptions</a>
+        <a href="#custom">Custom filters</a>
+        <a href="#data">Local data</a>
+      </nav>
+      <p><span class="privacy-dot"></span> Private by design<br>Your configuration stays on this device.</p>
+    </aside>
+
+    <main>
+      <header>
+        <div>
+          <span class="kicker">PREFERENCES</span>
+          <h1>Protection, your way.</h1>
+          <p>Fine-tune blocking without compromising speed or privacy.</p>
+        </div>
+        <div id="saveStatus" role="status" aria-live="polite"></div>
+      </header>
+
+      <form id="settingsForm">
+        <section id="protection" class="panel">
+          <div class="section-heading">
+            <div><span>01</span><h2>Protection</h2></div>
+            <p>Network rules stop known ad infrastructure before download. The page classifier catches native ads.</p>
+          </div>
+          <label class="field-row">
+            <span><strong>Enable protection</strong><small>Master switch for network and page filtering</small></span>
+            <input id="globalEnabled" type="checkbox" class="toggle">
+          </label>
+          <label class="field-row">
+            <span><strong>Protection level</strong><small>Strict also blocks common third-party trackers</small></span>
+            <select id="level">
+              <option value="relaxed">Relaxed — high confidence only</option>
+              <option value="balanced">Balanced — recommended</option>
+              <option value="strict">Strict — aggressive + privacy</option>
+            </select>
+          </label>
+          <label class="field-row">
+            <span><strong>Show placeholders</strong><small>Leave a small marker where a page ad was removed</small></span>
+            <input id="showPlaceholders" type="checkbox" class="toggle">
+          </label>
+          <label class="field-row">
+            <span><strong>Block redirect ads</strong><small>Stop ad popups, suspicious sponsored links, and known ad-network navigations</small></span>
+            <input id="redirectProtection" type="checkbox" class="toggle">
+          </label>
+          <label class="field-row">
+            <span><strong>Anti-adblock compatibility</strong><small>Preserve harmless detector probes and remove high-confidence anti-adblock overlays</small></span>
+            <input id="antiAdblockCompatibility" type="checkbox" class="toggle">
+          </label>
+          <label class="field-row">
+            <span><strong>Dynamic local filtering</strong><small>Learn repeatedly observed ad hosts locally; two unrelated sites must corroborate a host</small></span>
+            <input id="dynamicFiltering" type="checkbox" class="toggle">
+          </label>
+          <label class="field-row">
+            <span><strong>Clean tracking links</strong><small>In Strict mode, remove click IDs and campaign parameters before navigation</small></span>
+            <input id="cleanTrackingParameters" type="checkbox" class="toggle">
+          </label>
+          <label class="field-row">
+            <span><strong>Block advertising APIs</strong><small>Disable browser ad-auction, attribution, Topics, beacon, and suspicious worker capabilities</small></span>
+            <input id="privacyApiProtection" type="checkbox" class="toggle">
+          </label>
+          <label class="field-row">
+            <span><strong>Fingerprint resistance</strong><small>Strict-only, low-noise protection for canvas, WebGL, audio, and high-entropy client hints</small></span>
+            <input id="fingerprintProtection" type="checkbox" class="toggle">
+          </label>
+        </section>
+
+        <section id="exceptions" class="panel">
+          <div class="section-heading">
+            <div><span>02</span><h2>Site exceptions</h2></div>
+            <p>Protection is fully bypassed on these sites. Add one domain per line.</p>
+          </div>
+          <label class="stacked" for="disabledSites">
+            <strong>Allowed sites</strong>
+            <textarea id="disabledSites" rows="6" spellcheck="false" placeholder="example.com&#10;news.example.org"></textarea>
+          </label>
+        </section>
+
+        <section id="custom" class="panel two-column">
+          <div class="section-heading full">
+            <div><span>03</span><h2>Custom filters</h2></div>
+            <p>Extend both layers without editing extension files.</p>
+          </div>
+          <label class="stacked" for="customBlockDomains">
+            <strong>Blocked resource domains</strong>
+            <small>Requests to these domains are blocked inside pages.</small>
+            <textarea id="customBlockDomains" rows="8" spellcheck="false" placeholder="ads.example.com"></textarea>
+          </label>
+          <label class="stacked" for="customSelectors">
+            <strong>Hidden CSS selectors</strong>
+            <small>Matching page elements are always hidden.</small>
+            <textarea id="customSelectors" rows="8" spellcheck="false" placeholder=".sponsored-card&#10;[data-promo='true']"></textarea>
+          </label>
+        </section>
+
+        <section id="data" class="panel">
+          <div class="section-heading">
+            <div><span>04</span><h2>Local data</h2></div>
+            <p>Settings, aggregate counts, and bounded pseudonymous reputation evidence stay on this device.</p>
+          </div>
+          <div class="data-actions">
+            <button id="exportButton" type="button" class="secondary">Export settings</button>
+            <button id="resetStatsButton" type="button" class="danger">Reset statistics</button>
+            <button id="resetReputationButton" type="button" class="danger">Reset learned hosts</button>
+          </div>
+        </section>
+
+        <div class="form-actions">
+          <button id="saveButton" type="submit" class="primary">Save changes</button>
+        </div>
+      </form>
+    </main>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>

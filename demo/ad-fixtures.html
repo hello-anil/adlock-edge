@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AdLock test fixtures</title>
+  <style>
+    body { max-width: 760px; margin: 40px auto; font: 16px/1.5 system-ui; }
+    article, .fixture { margin: 18px 0; padding: 18px; border: 1px solid #ccd2df; border-radius: 12px; }
+    .expected { color: #087849; font-weight: 700; }
+    .promoted-card { background: #fff8e6; }
+  </style>
+</head>
+<body>
+  <h1>Ad-classifier fixtures</h1>
+  <p>This paragraph and the editorial card below must remain visible.</p>
+
+  <article class="feed-card">
+    <strong>Useful editorial content</strong>
+    <p>A normal article containing the word address and a download badge.</p>
+  </article>
+
+  <div class="fixture ad-container" data-ad-slot="leaderboard">
+    <span>Explicit data-attribute ad — should disappear.</span>
+  </div>
+
+  <article class="promoted-card feed-card">
+    <small>Sponsored</small>
+    <h2>Native promotion — should disappear.</h2>
+  </article>
+
+  <div class="fixture expected">If this remains visible while the two ad fixtures disappear, the DOM layer passed.</div>
+</body>
+</html>

@@ -1,0 +1,130 @@
+{
+  "manifest_version": 3,
+  "name": "AdLock",
+  "version": "2.0.0",
+  "description": "A private multi-layer ad, tracker, popup, redirect, and resource-abuse blocker with per-site controls.",
+  "minimum_chrome_version": "120",
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting",
+    "declarativeNetRequest"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "icons": {
+    "16": "assets/icons/icon-16.png",
+    "32": "assets/icons/icon-32.png",
+    "48": "assets/icons/icon-48.png",
+    "128": "assets/icons/icon-128.png"
+  },
+  "action": {
+    "default_title": "AdLock",
+    "default_popup": "ui/popup.html",
+    "default_icon": {
+      "16": "assets/icons/icon-16.png",
+      "32": "assets/icons/icon-32.png",
+      "48": "assets/icons/icon-48.png",
+      "128": "assets/icons/icon-128.png"
+    }
+  },
+  "options_page": "ui/options.html",
+  "web_accessible_resources": [
+    {
+      "resources": ["content/ad-api-shim.js"],
+      "matches": ["http://*/*", "https://*/*"],
+      "use_dynamic_url": true
+    },
+    {
+      "resources": ["assets/icons/icon-16.png"],
+      "matches": ["https://net77.cc/*", "https://*.net77.cc/*"],
+      "use_dynamic_url": true
+    }
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content/domain-data.js",
+        "content/privacy-guard.js",
+        "content/navigation-guard.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true,
+      "match_origin_as_fallback": true,
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content/runtime-bridge.js",
+        "content/domain-data.js",
+        "content/engine.js",
+        "content/content.js"
+      ],
+      "css": [
+        "content/cosmetic.css"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true,
+      "match_origin_as_fallback": true,
+      "world": "ISOLATED"
+    }
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "core_ads",
+        "enabled": true,
+        "path": "rules/core.json"
+      },
+      {
+        "id": "generated_ads",
+        "enabled": true,
+        "path": "rules/generated-always.json"
+      },
+      {
+        "id": "privacy_strict",
+        "enabled": false,
+        "path": "rules/privacy.json"
+      },
+      {
+        "id": "generated_strict",
+        "enabled": false,
+        "path": "rules/generated-strict.json"
+      },
+      {
+        "id": "privacy_navigation",
+        "enabled": false,
+        "path": "rules/privacy-navigation.json"
+      },
+      {
+        "id": "redirect_ads",
+        "enabled": true,
+        "path": "rules/redirects.json"
+      },
+      {
+        "id": "generated_redirects",
+        "enabled": true,
+        "path": "rules/generated-redirects.json"
+      },
+      {
+        "id": "anti_adblock_compat",
+        "enabled": true,
+        "path": "rules/compatibility.json"
+      }
+    ]
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "adlock",
+  "version": "2.0.0",
+  "private": true,
+  "description": "A local-first Manifest V3 algorithmic ad blocker.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test tests/engine.test.mjs tests/navigation-guard.test.mjs tests/privacy-guard.test.mjs tests/rules.test.mjs tests/runtime-bridge.test.mjs tests/service-worker.test.mjs && node scripts/validate.mjs",
+    "validate": "node scripts/validate.mjs",
+    "benchmark": "node scripts/benchmark.mjs",
+    "benchmark:assert": "node scripts/benchmark.mjs --assert",
+    "release": "npm test && npm run benchmark:assert && node scripts/package-release.mjs",
+    "release:package": "node scripts/package-release.mjs",
+    "release:check": "node scripts/package-release.mjs --check"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^26.1.1"
+  }
+}

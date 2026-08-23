@@ -1,0 +1,252 @@
+[
+  {
+    "id": 5000,
+    "priority": 2,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "requestDomains": [
+        "2mdn.net",
+        "adform.net",
+        "adnxs.com",
+        "adsrvr.org",
+        "amazon-adsystem.com",
+        "bidswitch.net",
+        "casalemedia.com",
+        "criteo.com",
+        "criteo.net",
+        "doubleclick.net",
+        "googleadservices.com",
+        "googlesyndication.com",
+        "lijit.com",
+        "media.net",
+        "openx.net",
+        "pubmatic.com",
+        "rubiconproject.com",
+        "smartadserver.com"
+      ],
+      "domainType": "thirdParty",
+      "resourceTypes": [
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "object",
+        "xmlhttprequest",
+        "ping",
+        "csp_report",
+        "media",
+        "websocket",
+        "webtransport",
+        "webbundle",
+        "other"
+      ]
+    }
+  },
+  {
+    "id": 5010,
+    "priority": 2,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "requestDomains": [
+        "adap.tv",
+        "adswizz.com",
+        "aniview.com",
+        "auditude.com",
+        "brightline.tv",
+        "cedato.com",
+        "freewheel.tv",
+        "fwmrm.net",
+        "innovid.com",
+        "innovid.tv",
+        "lkqd.net",
+        "spotx.tv",
+        "spotxchange.com",
+        "springserve.com",
+        "streamrail.com",
+        "teads.tv",
+        "tremorhub.com",
+        "tremorvideo.com",
+        "unrulymedia.com",
+        "videologygroup.com"
+      ],
+      "domainType": "thirdParty",
+      "resourceTypes": [
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "object",
+        "xmlhttprequest",
+        "ping",
+        "csp_report",
+        "media",
+        "websocket",
+        "webtransport",
+        "webbundle",
+        "other"
+      ]
+    }
+  },
+  {
+    "id": 5020,
+    "priority": 2,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "requestDomains": [
+        "adblade.com",
+        "content.ad",
+        "dianomi.com",
+        "mgid.com",
+        "mgidcdn.com",
+        "nativo.com",
+        "outbrain.com",
+        "plista.com",
+        "revcontent.com",
+        "sharethrough.com",
+        "taboola.com",
+        "triplelift.com",
+        "yieldmo.com",
+        "zemanta.com"
+      ],
+      "domainType": "thirdParty",
+      "resourceTypes": [
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "object",
+        "xmlhttprequest",
+        "ping",
+        "csp_report",
+        "media",
+        "websocket",
+        "webtransport",
+        "webbundle",
+        "other"
+      ]
+    }
+  },
+  {
+    "id": 5030,
+    "priority": 5,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "requestDomains": [
+        "405kk.com",
+        "484r.com",
+        "ad-maven.com",
+        "adangle.online",
+        "adsterra.com",
+        "agl002.online",
+        "aifpleasurebeh.org",
+        "almagracockles.cyou",
+        "arabalative.shop",
+        "arylblurry.shop",
+        "browpotware.com",
+        "clickadu.com",
+        "cloudnestra.com",
+        "cloudorchestranova.com",
+        "evadav.com",
+        "ffb7df5a878b59e42e257c042f54bed2.com",
+        "galaksion.com",
+        "hilltopads.net",
+        "hippinglawns.com",
+        "kettledroopingcontinuation.com",
+        "l33xmeqmetu36p2.cfd",
+        "llvpn.com",
+        "luugy.com",
+        "monetag.com",
+        "moonlighthathel.org",
+        "motelmute.com",
+        "onclickalgo.com",
+        "onclickperformance.com",
+        "onclickprediction.com",
+        "pipaffiliates.com",
+        "popads.net",
+        "popcash.net",
+        "portalfluently.com",
+        "propellerads.com",
+        "protrafficinspector.com",
+        "pushground.com",
+        "realizationnewestfangs.com",
+        "richads.com",
+        "snippedpontils.com",
+        "storageimagedisplay.com",
+        "trafficjunky.net",
+        "weevilsmoggyshoguns.cyou",
+        "workdeadlinededicate.com",
+        "xbeat.space",
+        "zeropark.com"
+      ],
+      "domainType": "thirdParty",
+      "resourceTypes": [
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "object",
+        "xmlhttprequest",
+        "ping",
+        "csp_report",
+        "media",
+        "websocket",
+        "webtransport",
+        "webbundle",
+        "other"
+      ]
+    }
+  },
+  {
+    "id": 5040,
+    "priority": 5,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "requestDomains": [
+        "authedmine.com",
+        "coin-hive.com",
+        "coinhive.com",
+        "coinimp.com",
+        "coinnebula.com",
+        "crypto-loot.com",
+        "cryptoloot.pro",
+        "deepminer.com",
+        "jsecoin.com",
+        "mineralt.io",
+        "minero.cc",
+        "webmine.cz",
+        "webminepool.com",
+        "webminerpool.com"
+      ],
+      "resourceTypes": [
+        "sub_frame",
+        "stylesheet",
+        "script",
+        "image",
+        "font",
+        "object",
+        "xmlhttprequest",
+        "ping",
+        "csp_report",
+        "media",
+        "websocket",
+        "webtransport",
+        "webbundle",
+        "other"
+      ]
+    }
+  }
+]

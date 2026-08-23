@@ -1,0 +1,46 @@
+/* Applied at USER origin only while protection is enabled for this site. */
+:where(
+  ins.adsbygoogle,
+  amp-ad,
+  amp-embed[type="taboola" i],
+  amp-embed[type="outbrain" i],
+  [data-ad-slot],
+  [data-ad-unit],
+  [data-advertisement="true" i],
+  [id^="google_ads_"],
+  [id^="div-gpt-ad-"],
+  .video-ads,
+  .ytp-ad-module,
+  .ytp-ad-overlay-container,
+  .ima-ad-container,
+  .vast-ad-container,
+  .vjs-ad-overlay,
+  .jw-ad,
+  .jw-plugin-googima,
+  .hhhhppp
+) {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+body[data-time][data-hash] > div:not([id]):not([class])[style*="position: fixed" i][style*="bottom: 20px" i][style*="z-index: 9999" i] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Suppress full-screen sharing/bookmark promotions without hiding normal share controls. */
+[class~="fixed"]:has(img[alt="Sharing is Caring" i]) {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Remove the empty player state left after a video ad surface is suppressed. */
+:where(.ad-showing, .ima-ad-state) :where(.video-ads, .ima-ad-container, .ytp-ad-player-overlay) {
+  display: none !important;
+}

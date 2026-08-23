@@ -1,0 +1,68 @@
+[
+  {
+    "id": 3001,
+    "priority": 100,
+    "action": {
+      "type": "redirect",
+      "redirect": { "extensionPath": "/content/ad-api-shim.js" }
+    },
+    "condition": {
+      "urlFilter": "||pagead2.googlesyndication.com/pagead/js/adsbygoogle.js",
+      "domainType": "thirdParty",
+      "resourceTypes": ["script"]
+    }
+  },
+  {
+    "id": 3002,
+    "priority": 100,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||net77.cc/js/chor-mate.js",
+      "initiatorDomains": ["net77.cc"],
+      "resourceTypes": ["script"]
+    }
+  },
+  {
+    "id": 3003,
+    "priority": 100,
+    "action": {
+      "type": "redirect",
+      "redirect": { "extensionPath": "/assets/icons/icon-16.png" }
+    },
+    "condition": {
+      "urlFilter": "||publishers.monetag.com/assets/favicon-16x16.png",
+      "initiatorDomains": ["net77.cc"],
+      "resourceTypes": ["image"]
+    }
+  },
+  {
+    "id": 3004,
+    "priority": 100,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||unpkg.com/disable-devtool@",
+      "initiatorDomains": ["ythd.org"],
+      "resourceTypes": ["script"]
+    }
+  },
+  {
+    "id": 3005,
+    "priority": 100,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||theajack.github.io/disable-devtool/404.html",
+      "initiatorDomains": ["ythd.org"],
+      "resourceTypes": ["main_frame", "sub_frame"]
+    }
+  },
+  {
+    "id": 3006,
+    "priority": 100,
+    "action": { "type": "allow" },
+    "condition": {
+      "requestDomains": ["cloudorchestranova.com"],
+      "initiatorDomains": ["ythd.org"],
+      "resourceTypes": ["sub_frame"]
+    }
+  }
+]

@@ -1,0 +1,84 @@
+[
+  {
+    "id": 1001,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "requestDomains": [
+        "adsafeprotected.com",
+        "bluekai.com",
+        "chartbeat.com",
+        "clarity.ms",
+        "demdex.net",
+        "exelator.com",
+        "facebook.net",
+        "hotjar.com",
+        "krxd.net",
+        "mathtag.com",
+        "moatads.com",
+        "mxpnl.com",
+        "newrelic.com",
+        "quantserve.com",
+        "scorecardresearch.com",
+        "segment.io",
+        "segment.com"
+      ],
+      "domainType": "thirdParty",
+      "resourceTypes": ["script", "image", "xmlhttprequest", "ping", "websocket", "other"]
+    }
+  },
+  {
+    "id": 1002,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "google-analytics.com/",
+      "domainType": "thirdParty",
+      "resourceTypes": ["script", "image", "xmlhttprequest", "ping"]
+    }
+  },
+  {
+    "id": 1003,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "requestDomains": [
+        "analytics.tiktok.com",
+        "analytics.twitter.com",
+        "analytics.yahoo.com",
+        "bat.bing.com",
+        "business-api.tiktok.com",
+        "ct.pinterest.com",
+        "snap.licdn.com",
+        "static.ads-twitter.com",
+        "tr.line.me",
+        "tr.snapchat.com"
+      ],
+      "domainType": "thirdParty",
+      "resourceTypes": ["script", "image", "xmlhttprequest", "ping", "other"]
+    }
+  },
+  {
+    "id": 1004,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "requestDomains": [
+        "amplitude.com",
+        "contentsquare.net",
+        "crazyegg.com",
+        "decibelinsight.net",
+        "fullstory.com",
+        "heapanalytics.com",
+        "kissmetrics.io",
+        "logrocket.com",
+        "luckyorange.com",
+        "mixpanel.com",
+        "mouseflow.com",
+        "smartlook.com"
+      ],
+      "domainType": "thirdParty",
+      "resourceTypes": ["script", "image", "xmlhttprequest", "ping", "websocket", "other"]
+    }
+  }
+]
