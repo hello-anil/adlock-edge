@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import vm from "node:vm";
 
-async function createPrivacyGuard(locationOverride = {}) {
+async function createPrivacyGuard(locationOverride = {}, initialChannel = "") {
   const listeners = new Map();
   const calls = { beacons: [], sockets: [], topics: 0, auctions: 0, registrations: [] };
 
@@ -145,6 +145,7 @@ async function createPrivacyGuard(locationOverride = {}) {
   }
 
   const document = new FakeDocument();
+  if (initialChannel) document.documentElement.setAttribute("data-aas-config-channel", initialChannel);
   const navigator = new FakeNavigator();
   const fakeLocation = {
     href: locationOverride.href || "https://publisher.example/watch",
@@ -279,6 +280,24 @@ test("strict fingerprint defenses coarsen readbacks while balanced mode preserve
   assert.equal(canvas.toDataURL(), nativeCanvasReadback);
   const nativeEntropy = await guard.navigator.userAgentData.getHighEntropyValues(["architecture"]);
   assert.equal(nativeEntropy.architecture, "x86");
+});
+
+test("website-selected channels cannot disable defenses or retrieve native functions", async () => {
+  const guard = await createPrivacyGuard({}, "sitechosen");
+  assert.notEqual(guard.document.documentElement.getAttribute("data-aas-config-channel"), "sitechosen");
+  guard.configure({ enabled: true, level: "strict", fingerprintProtection: true, privacyApiProtection: true });
+  const canvas = new guard.FakeCanvas();
+  const before = canvas.toDataURL();
+  guard.document.dispatchEvent(new guard.FakeCustomEvent("aas:config:sitechosen", {
+    detail: { enabled: false, level: "relaxed", redirectProtection: false, fingerprintProtection: false }
+  }));
+  const lookup = { mode: "lookup", candidate: guard.context.CanvasRenderingContext2D.prototype.getImageData, native: null };
+  guard.document.dispatchEvent(new guard.FakeCustomEvent("aas:config:sitechosen:native", { detail: lookup }));
+  assert.equal(lookup.native, null);
+  assert.equal(canvas.toDataURL(), before);
+  assert.equal(guard.navigator.sendBeacon("https://tracker.example/pixel"), false);
+  guard.configure({ enabled: false, level: "strict" });
+  assert.notEqual(canvas.toDataURL(), before, "the extension's own channel can still pause defenses");
 });
 
 test("attribution attributes are stripped only while privacy protection is active", async () => {

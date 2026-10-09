@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import "./content.test.mjs";
 
 const require = createRequire(import.meta.url);
 const engine = require("../content/engine.js");
@@ -48,12 +47,94 @@ test("recognizes known ad network URLs", () => {
   assert.equal(engine.isKnownAdUrl("https://cdn.example.com/app.js"), false);
 });
 
+test("domain lookup respects label boundaries, trailing dots and malformed URLs", () => {
+  assert.equal(engine.isKnownAdUrl("https://ads.doubleclick.net./ad"), true);
+  assert.equal(engine.isKnownAdUrl("https://notdoubleclick.net/article"), false);
+  assert.equal(engine.isKnownAdUrl("https://doubleclick.net.example.org/article"), false);
+  assert.equal(engine.isKnownAdUrl("https://example.org/article?source=doubleclick.net"), false);
+  assert.equal(engine.isKnownAdUrl("http://[invalid]/doubleclick.net"), false);
+  assert.equal(engine.analyzeNavigation("https://ads.doubleclick.net./ad").blocked, true);
+});
+
+test("text sampling bounds character copies and subtree visits", () => {
+  let visits = 0;
+  const element = {
+    ownerDocument: {
+      createTreeWalker() {
+        return { nextNode() { visits += 1; return { nodeType: 1 }; } };
+      }
+    },
+    get textContent() { throw new Error("must not copy the entire subtree"); }
+  };
+  assert.ok(engine.readText(element).length > 2400, "incomplete samples cannot look like short disclosure labels");
+  assert.ok(visits <= 257);
+  element.ownerDocument.createTreeWalker = () => ({
+    nextNode: () => ({ nodeType: 3, nodeValue: "x".repeat(100000) })
+  });
+  assert.equal(engine.readText(element).length, 4097);
+});
+
+test("explicit ad format metadata blocks while normal embedded frames remain usable", () => {
+  for (const attribute of ["data-ad-type", "data-ad-format"]) {
+    const element = new FakeElement("div", { [attribute]: "banner" });
+    assert.equal(engine.classify(element, "relaxed").blocked, true);
+  }
+  const ad = new FakeElement("iframe", { src: "https://widgets.taboola.com/ad" });
+  const video = new FakeElement("iframe", { src: "https://www.youtube.com/embed/example" });
+  const payment = new FakeElement("iframe", { src: "https://js.stripe.com/payment" });
+  assert.equal(engine.classify(ad, "balanced").blocked, true);
+  assert.equal(engine.classify(video, "strict").blocked, false);
+  assert.equal(engine.classify(payment, "strict").blocked, false);
+});
+
 test("explicit ad attributes are high-confidence signals", () => {
   const element = new FakeElement("div", { "data-ad-slot": "leaderboard" });
   const result = engine.classify(element, "relaxed");
   assert.ok(result.score >= 9);
   assert.equal(result.blocked, true);
   assert.equal(result.container, element);
+});
+
+test("high-confidence ad metadata does not require synchronous layout", () => {
+  const element = new FakeElement("div", { "data-ad-slot": "leaderboard" });
+  element.getBoundingClientRect = () => { throw new Error("unnecessary layout read"); };
+  assert.equal(engine.classify(element, "relaxed").blocked, true);
+});
+
+test("formatted article leads, bibliography titles and navigation titles stay visible", () => {
+  const paragraph = new FakeElement("p", {}, "is a form of communication.");
+  const lead = new FakeElement("b", {}, "Advertising", paragraph);
+  const listItem = new FakeElement("li", {}, "McFall, Elizabeth Rose (2004)");
+  const book = new FakeElement("i", {}, "Advertising: a cultural economy", listItem);
+  const header = new FakeElement("div", { class: "vector-header-container vector-sticky-header-container" });
+  const title = new FakeElement("span", {}, "", header);
+  const bold = new FakeElement("b", {}, "Advertising", title);
+  const plainTitle = new FakeElement("div", { class: "vector-sticky-header-context-bar-primary" }, "Advertising", header);
+  title.textContent = "Advertising";
+  for (const element of [lead, book, listItem, title, bold, plainTitle, header]) {
+    for (const level of ["relaxed", "balanced", "strict"]) {
+      assert.equal(engine.classify(element, level).blocked, false, `${element.tagName} in ${level}`);
+    }
+  }
+});
+
+test("formatted disclosures inside commercial contexts retain ad detection", () => {
+  for (const attributes of [{ "data-ad-slot": "banner" }, { class: "feed-card" }, { class: "ad-container" }]) {
+    const card = new FakeElement("article", attributes);
+    const label = new FakeElement("b", {}, "Sponsored", card);
+    assert.equal(engine.classify(label, "strict").blocked, true);
+  }
+  assert.equal(engine.classify(new FakeElement("h2", { "data-sponsored": "true" }, "Advertising"), "strict").blocked, true);
+});
+
+test("an ad inside a navigation region does not hide the whole navigation container", () => {
+  const header = new FakeElement("div", { class: "page-header-container" });
+  const ad = new FakeElement("article", { "data-ad-slot": "header-ad" }, "", header);
+  const label = new FakeElement("span", {}, "Sponsored", ad);
+  const result = engine.classify(label, "strict");
+  assert.equal(result.blocked, true);
+  assert.equal(result.container, ad);
+  assert.notEqual(result.container, header);
 });
 
 test("a sponsored label resolves to its feed card", () => {
@@ -64,6 +145,157 @@ test("a sponsored label resolves to its feed card", () => {
   assert.equal(result.container, card);
 });
 
+test("sampled marker text preserves direct disclosures and avoids repeated subtree reads", () => {
+  const directLabel = new FakeElement("span", {}, "Sponsored");
+  assert.equal(engine.hasMarkerText(directLabel, "Sponsored followed by a long editorial description"), true);
+  const fallbackLabel = new FakeElement("span");
+  Object.defineProperty(fallbackLabel, "textContent", { get() { throw new Error("cached sample must be used"); } });
+  assert.equal(engine.hasMarkerText(fallbackLabel, "Sponsored"), true);
+
+  let reads = 0;
+  const candidate = new FakeElement("div", { "data-ad-slot": "banner" });
+  candidate.ownerDocument = { createTreeWalker() {
+    reads += 1;
+    let supplied = false;
+    return { nextNode() {
+      if (supplied) return null;
+      supplied = true;
+      return { nodeType: 3, nodeValue: "Recommended product" };
+    } };
+  } };
+  assert.equal(engine.scoreCandidate(candidate).score, 9);
+  assert.equal(reads, 1, "own text and protected UI checks reuse the candidate's sample");
+});
+
+test("ordinary glossary links labelled advertisement remain visible in every mode", () => {
+  const article = new FakeElement("article", { class: "article-card" });
+  const glossary = new FakeElement("a", {
+    id: "mwBSI", class: "mw-redirect", title: "Advertisement", "aria-label": "Advertisement",
+    href: "https://reference.example/wiki/Advertisement"
+  }, "advertisement", article, { width: 300, height: 250 });
+  const category = new FakeElement("a", { href: "/glossary/ads" }, "Ads");
+  for (const level of ["relaxed", "balanced", "strict"]) {
+    for (const link of [glossary, category]) {
+      const result = engine.classify(link, level);
+      assert.equal(result.blocked, false, `${link.getAttribute("href")} in ${level}`);
+      assert.equal(result.container, null);
+    }
+  }
+});
+
+test("ambiguous accessibility labels use context while actual labelled ad surfaces remain blocked", () => {
+  for (const label of ["Advertisement", "Sponsored"]) {
+    const reference = new FakeElement("a", {
+      href: `/reference/${label.toLowerCase()}`, class: "advertisement", "aria-label": label
+    }, label);
+    for (const level of ["relaxed", "balanced", "strict"]) {
+      assert.equal(engine.classify(reference, level).blocked, false, `${label} reference in ${level}`);
+    }
+    const adSurface = new FakeElement("aside", { "aria-label": label }, "An advertiser's special offer");
+    for (const level of ["balanced", "strict"]) {
+      assert.equal(engine.classify(adSurface, level).blocked, true, `${label} ad surface in ${level}`);
+    }
+  }
+});
+
+test("glossary link wrappers and inline text children retain their editorial context", () => {
+  for (const text of ["Advertisement", "Sponsored"]) {
+    const paragraph = new FakeElement("p");
+    const reference = new FakeElement("a", { href: "/reference/advertising", "aria-label": text }, "", paragraph);
+    const inline = new FakeElement("span", {}, text, reference);
+    paragraph.textContent = text;
+    for (const level of ["relaxed", "balanced", "strict"]) {
+      for (const element of [paragraph, reference, inline]) {
+        assert.equal(engine.classify(element, level).blocked, false, `${element.tagName} around ${text} in ${level}`);
+      }
+    }
+  }
+  const adCard = new FakeElement("article", { "data-sponsored": "true" });
+  const disclosure = new FakeElement("a", { href: "/reference/advertising" }, "", adCard);
+  const label = new FakeElement("span", {}, "Sponsored", disclosure);
+  adCard.textContent = "Sponsored";
+  assert.equal(engine.classify(adCard, "relaxed").blocked, true);
+  assert.equal(engine.classify(label, "strict").blocked, true,
+    "declared ad context is preserved around nested reference-style disclosures");
+  const commercialLink = new FakeElement("a", { href: "https://doubleclick.net/offer" });
+  const commercialLabel = new FakeElement("span", {}, "Sponsored", commercialLink);
+  assert.equal(engine.classify(commercialLabel, "strict").blocked, true);
+});
+
+test("disclosure links with independent advertising evidence still block", () => {
+  const examples = [
+    new FakeElement("a", { href: "https://doubleclick.net/offer" }, "Advertisement"),
+    new FakeElement("a", { href: "/advertiser", "data-sponsored": "true" }, "Sponsored"),
+    new FakeElement("a", { href: "/advertiser", class: "ad-container" }, "Advertisement"),
+    new FakeElement("a", { href: "https://merchant.example/offer", rel: "sponsored" }, "Sponsored")
+  ];
+  for (const level of ["relaxed", "balanced", "strict"]) {
+    for (const ad of examples) assert.equal(engine.classify(ad, level).blocked, true, `${ad.getAttribute("href")} in ${level}`);
+  }
+  const adCard = new FakeElement("article", { class: "feed-card", "data-sponsored": "true" });
+  const disclosure = new FakeElement("a", { href: "/disclosure" }, "Sponsored", adCard);
+  assert.equal(engine.classify(disclosure, "balanced").container, adCard);
+  assert.equal(engine.classify(new FakeElement("a", {}, "Sponsored"), "strict").blocked, true,
+    "an anchor without a destination is not assumed to be an editorial link");
+});
+
+test("hostnames beginning with ads are informational text rather than disclosure labels", () => {
+  for (const hostname of ["ads-api.tiktok.com", "ads-sg.tiktok.com", "ads-api.twitter.com"]) {
+    for (const tag of ["div", "span"]) {
+      const label = new FakeElement(tag, { id: hostname }, hostname);
+      assert.equal(engine.hasMarkerText(label), false);
+      for (const level of ["relaxed", "balanced", "strict"]) {
+        assert.equal(engine.classify(label, level).blocked, false, `${hostname} in ${level}`);
+      }
+    }
+  }
+  for (const text of ["Advertisement: paid content", "Sponsored - Example company", "Ad · Offer"]) {
+    assert.equal(engine.hasMarkerText(new FakeElement("span", {}, text)), true, text);
+  }
+});
+
+test("weakly named ad host lists preserve diagnostic content without excluding live ad payloads", () => {
+  const makeList = (attributes = {}) => {
+    const list = new FakeElement("div", { id: "Ads", class: "grid", ...attributes }, "Ads");
+    new FakeElement("span", {}, "stats.g.doubleclick.net", list);
+    new FakeElement("span", {}, "ads-api.tiktok.com", list);
+    return list;
+  };
+  const diagnostics = makeList();
+  for (const level of ["relaxed", "balanced", "strict"]) {
+    assert.equal(engine.classify(diagnostics, level).blocked, false, `diagnostic list in ${level}`);
+    assert.equal(engine.classify(makeList({ "data-ad-slot": "banner" }), level).blocked, true, `explicit slot in ${level}`);
+    assert.equal(engine.classify(makeList({ class: "ad-container" }), level).blocked, true, `ad container in ${level}`);
+  }
+  const liveContainer = makeList();
+  const payload = new FakeElement("iframe", { src: "https://doubleclick.net/ads/creative" }, "", liveContainer);
+  assert.equal(engine.classify(liveContainer, "strict").blocked, true);
+  assert.equal(engine.classify(payload, "relaxed").blocked, true);
+  const declaredContainer = makeList();
+  new FakeElement("div", { "data-sponsored": "true" }, "Recommended product", declaredContainer);
+  assert.equal(engine.classify(declaredContainer, "strict").blocked, true,
+    "a declared native ad inside a host list retains its advertising context");
+});
+
+test("formatted diagnostic grids preserve hostname content despite whitespace and SVG icons", () => {
+  const grid = new FakeElement("div", { id: "Ads", class: "grid" }, "Ads");
+  const headingWrapper = new FakeElement("div", {}, "", grid);
+  const heading = new FakeElement("h5", {}, "Ads", headingWrapper);
+  for (let index = 0; index < 22; index += 1) {
+    const row = new FakeElement("div", {}, "", grid);
+    for (let space = 0; space < 14; space += 1) row.childNodes.push({ nodeType: 3, nodeValue: "\n  " });
+    const icon = new FakeElement("svg", {}, "", row);
+    for (let path = 0; path < 3; path += 1) new FakeElement("path", {}, "", icon);
+    new FakeElement("span", {}, `probe${index}.doubleclick.net`, row);
+  }
+  assert.equal(engine.classify(grid, "strict").blocked, false);
+  assert.equal(engine.classify(heading, "strict").blocked, false);
+  assert.equal(engine.classify(headingWrapper, "strict").blocked, false);
+  const payload = new FakeElement("iframe", { src: "https://doubleclick.net/ads/creative" }, "", grid);
+  assert.equal(engine.classify(grid, "strict").blocked, true);
+  assert.equal(engine.classify(payload, "relaxed").blocked, true);
+});
+
 test("native and social promotions require explicit promotion metadata", () => {
   const nativeAd = new FakeElement("article", { "data-sponsored": "true" }, "Recommended for you");
   const socialPromo = new FakeElement("aside", { class: "instagram-sponsored-widget" }, "Follow this promoted account");
@@ -71,6 +303,38 @@ test("native and social promotions require explicit promotion metadata", () => {
   assert.equal(engine.classify(nativeAd, "relaxed").blocked, true);
   assert.equal(engine.classify(socialPromo, "balanced").blocked, true);
   assert.equal(engine.classify(ordinaryShare, "strict").blocked, false);
+});
+
+test("false promotion flags preserve editorial cards in every protection level", () => {
+  for (const attribute of ["data-sponsored", "data-promoted", "data-social-promo"]) {
+    for (const value of ["false", " FALSE ", "0", " 0 "]) {
+      const editorial = new FakeElement("article", { class: "article-card", [attribute]: value }, "Editorial story");
+      for (const level of ["relaxed", "balanced", "strict"]) {
+        const result = engine.classify(editorial, level);
+        assert.equal(result.blocked, false, `${attribute}=${JSON.stringify(value)} at ${level}`);
+        assert.equal(result.score, 0);
+        assert.equal(result.container, null);
+      }
+    }
+  }
+});
+
+test("positive and presence-style promotion flags remain high-confidence advertising evidence", () => {
+  for (const attribute of ["data-sponsored", "data-promoted", "data-social-promo"]) {
+    for (const value of ["true", "1", ""]) {
+      const ad = new FakeElement("article", { [attribute]: value }, "Recommended product");
+      const result = engine.classify(ad, "relaxed");
+      assert.equal(result.blocked, true, `${attribute}=${JSON.stringify(value)}`);
+      assert.ok(result.score >= 9);
+    }
+  }
+});
+
+test("false promotion flags do not override independent advertising evidence", () => {
+  const slot = new FakeElement("div", { "data-sponsored": "false", "data-ad-slot": "leaderboard" });
+  const banner = new FakeElement("div", { "data-promoted": "0", class: "ad-container" });
+  assert.equal(engine.classify(slot, "relaxed").blocked, true);
+  assert.equal(engine.classify(banner, "balanced").blocked, true);
 });
 
 test("ordinary words containing ad-like letters do not trigger blocking", () => {
@@ -193,6 +457,27 @@ test("anti-adblock messages are distinguished from security challenges", () => {
   assert.equal(engine.isAntiAdblockMessage("Please whitelist this site because ads are blocked."), true);
   assert.equal(engine.isAntiAdblockMessage("Cloudflare security verification: verify you are human."), false);
   assert.equal(engine.isAntiAdblockMessage("Sign in to continue watching."), false);
+});
+
+test("anti-adblock detection requires a directive or restricted access rather than neutral mentions", () => {
+  for (const text of [
+    "d3Host List (ADBLOCK)", "AdBlock detected", "Adblock test results: 20 ads are blocked.",
+    "Advertising networks and ad blockers", "Why Cosmetic Filter test fails? Adblock settings and test results."
+  ]) {
+    assert.equal(engine.isAntiAdblockMessage(text), false, text);
+  }
+  for (const text of [
+    "AdBlock / DNS Blocking detected. Please disable to continue.",
+    "Please turn off your ad blocker to continue reading.",
+    "Adblock detected. Content is unavailable.",
+    "Your ad blocker is preventing video playback.",
+    "Ads are blocked. Please allow ads to continue."
+  ]) {
+    assert.equal(engine.isAntiAdblockMessage(text), true, text);
+  }
+  for (const level of ["relaxed", "balanced", "strict"]) {
+    assert.equal(engine.classify(new FakeElement("button", { id: "d3H_adblock", class: "btn-blue" }, "d3Host List (ADBLOCK)"), level).blocked, false);
+  }
 });
 
 test("tiny empty ad bait is preserved for compatibility", () => {

@@ -8,6 +8,7 @@
     "condition": {
       "requestDomains": [
         "2mdn.net",
+        "ad-delivery.net",
         "adform.net",
         "adnxs.com",
         "adsrvr.org",
@@ -17,11 +18,13 @@
         "criteo.com",
         "criteo.net",
         "doubleclick.net",
+        "elb.the-ozone-project.com",
         "googleadservices.com",
         "googlesyndication.com",
         "lijit.com",
         "media.net",
         "openx.net",
+        "prebid.the-ozone-project.com",
         "pubmatic.com",
         "rubiconproject.com",
         "smartadserver.com"

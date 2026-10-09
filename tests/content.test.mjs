@@ -268,9 +268,10 @@ class FakeDocument {
   }
 }
 
-async function loadContentHarness() {
+async function loadContentHarness({ manualIdle = false } = {}) {
   const document = new FakeDocument();
   const messages = [];
+  const idleCallbacks = [];
   let ready;
   const readyPromise = new Promise((resolve) => { ready = resolve; });
 
@@ -373,7 +374,9 @@ async function loadContentHarness() {
     }),
     innerWidth: 940,
     innerHeight: 410,
-    requestIdleCallback: (callback) => queueMicrotask(() => callback({ timeRemaining: () => 50 })),
+    requestIdleCallback: (callback) => manualIdle
+      ? idleCallbacks.push(callback)
+      : queueMicrotask(() => callback({ timeRemaining: () => 50 })),
     setTimeout: harnessSetTimeout,
     clearTimeout,
     queueMicrotask,
@@ -385,6 +388,9 @@ async function loadContentHarness() {
   return {
     document,
     messages,
+    engine,
+    idleCallbacks,
+    runIdle(deadline = { timeRemaining: () => 50 }) { idleCallbacks.shift()?.(deadline); },
     createSurface(options) { return new FakeElement(document, "div", options); },
     createElement(tagName, attributes = {}, text = "") {
       const element = new FakeElement(document, tagName, { text });
@@ -486,6 +492,26 @@ test("obfuscated fixed missed-call promotions are hidden without relying on ad-l
   await settleMutations();
 
   assertSuppressed(promotion, "missed-call promotion");
+});
+
+test("net77 normal-flow warning surfaces retain their narrow anti-adblock protection", async () => {
+  const harness = await loadContentHarness();
+  const warning = harness.createSurface({
+    className: "hhhhppp",
+    text: "AdBlock / DNS Blocking detected. Please disable to continue.",
+    rect: { width: 620, height: 60 }
+  });
+  const ordinary = harness.createSurface({
+    className: "hhhhppp", text: "Learn about adblock filters and site settings.",
+    rect: { width: 620, height: 60 }
+  });
+  harness.append(warning);
+  harness.append(ordinary);
+  await settleMutations();
+
+  assert.equal(warning.style.position, "", "the reproduced warning is in normal document flow");
+  assertSuppressed(warning, "normal-flow net77 warning");
+  assert.notEqual(ordinary.style.getPropertyValue("visibility"), "hidden");
 });
 
 test("ordinary missed-call text in page content is preserved", async () => {
@@ -627,4 +653,214 @@ test("open-shadow announcements register roots attached after their host was sca
   await settleMutations();
 
   assertSuppressed(overlay, "announced shadow overlay");
+});
+
+test("mutation bursts defer inspection and coalesce repeated changes to one candidate", async () => {
+  const harness = await loadContentHarness({ manualIdle: true });
+  harness.runIdle();
+  const candidate = harness.createElement("div", { "data-test-candidate": "" });
+  harness.append(candidate);
+  await settleMutations(1);
+  harness.runIdle();
+  let classifications = 0;
+  let textReads = 0;
+  harness.engine.classify = () => { classifications += 1; return { blocked: false }; };
+  Object.defineProperty(candidate, "textContent", { get() { textReads += 1; return "Ordinary story"; } });
+  for (let index = 0; index < 1000; index += 1) candidate.setAttribute("class", `frame-${index}`);
+  await settleMutations(1);
+  assert.equal(textReads, 0, "MutationObserver must not read subtree text");
+  assert.equal(classifications, 0);
+  assert.equal(harness.idleCallbacks.length, 1, "one pending task for the entire burst");
+  harness.runIdle();
+  assert.equal(classifications, 1);
+});
+
+test("text nodes added to existing elements trigger disclosure classification", async () => {
+  const harness = await loadContentHarness();
+  const label = harness.createElement("span", {}, "Ordinary story");
+  harness.engine.hasMarkerText = (element) => element.textContent === "Sponsored";
+  harness.engine.classify = (element) => ({
+    blocked: element.textContent === "Sponsored", container: element, signals: []
+  });
+  harness.append(label);
+  await settleMutations(1);
+  label.textContent = "Sponsored";
+  harness.document._notify({ type: "childList", target: label, addedNodes: [{ nodeType: 3 }] });
+  await settleMutations(1);
+  assert.equal(label.style.getPropertyValue("visibility"), "hidden");
+});
+
+test("hidden tabs defer DOM work and resume the pending scan when visible", async () => {
+  const harness = await loadContentHarness({ manualIdle: true });
+  harness.runIdle();
+  harness.document.hidden = true;
+  let classifications = 0;
+  harness.engine.classify = () => { classifications += 1; return { blocked: false }; };
+  harness.append(harness.createElement("div", { "data-test-candidate": "" }));
+  await settleMutations(1);
+  assert.equal(harness.idleCallbacks.length, 0);
+  assert.equal(classifications, 0);
+  harness.document.hidden = false;
+  harness.dispatch("visibilitychange", [harness.document]);
+  while (harness.idleCallbacks.length) harness.runIdle();
+  assert.equal(classifications, 1);
+  harness.dispatch("visibilitychange", [harness.document]);
+  harness.runIdle();
+  assert.equal(classifications, 1, "tab switching should not reclassify the document");
+});
+
+test("large insertion bursts yield and recover overflow without losing ad candidates", async () => {
+  const harness = await loadContentHarness({ manualIdle: true });
+  harness.runIdle();
+  const classified = new Set();
+  harness.engine.classify = (element) => { classified.add(element); return { blocked: false }; };
+  for (let index = 0; index < 1000; index += 1) {
+    harness.append(harness.createElement("div", { "data-test-candidate": "", id: `item-${index}` }));
+  }
+  await settleMutations(1);
+  let slices = 0;
+  while (harness.idleCallbacks.length && slices < 1000) {
+    const previous = classified.size;
+    harness.runIdle({ didTimeout: true, timeRemaining: () => 0 });
+    assert.ok(classified.size - previous <= 350, "each task respects the element budget");
+    assert.ok(harness.idleCallbacks.length <= 1, "processing cannot schedule duplicate tasks");
+    slices += 1;
+  }
+  assert.ok(slices > 1 && slices < 1000);
+  assert.equal(classified.size, 1000, "overflow candidates are eventually discovered");
+});
+
+test("detached scan roots are discarded without inspecting their descendants", async () => {
+  const harness = await loadContentHarness({ manualIdle: true });
+  harness.runIdle();
+  let classifications = 0;
+  harness.engine.classify = () => { classifications += 1; return { blocked: false }; };
+  const candidate = harness.createElement("div", { "data-test-candidate": "" });
+  harness.append(candidate);
+  await settleMutations(1);
+  candidate.remove();
+  while (harness.idleCallbacks.length) harness.runIdle();
+  assert.equal(classifications, 0);
+});
+
+test("shared annoyance ancestors and candidate text are sampled once in a scheduler slice", async () => {
+  const harness = await loadContentHarness({ manualIdle: true });
+  harness.runIdle();
+  const popup = harness.createSurface({
+    className: "popup", text: "Documentation about adblock filters", rect: { width: 700, height: 280 }
+  });
+  const reads = new Map();
+  const sampledNodes = new Set();
+  const readText = harness.engine.readText;
+  harness.engine.readText = (element, ...args) => {
+    sampledNodes.add(element);
+    reads.set(element, (reads.get(element) || 0) + 1);
+    return readText(element, ...args);
+  };
+  let popupGeometryReads = 0;
+  popup.getBoundingClientRect = () => { popupGeometryReads += 1; return popup.rect; };
+  const labels = [];
+  for (let index = 0; index < 20; index += 1) {
+    const label = harness.createElement("span", { "data-test-candidate": "" }, "Read about adblock filters");
+    labels.push(label);
+    popup.appendChild(label);
+  }
+  harness.append(popup);
+  await settleMutations(1);
+  while (harness.idleCallbacks.length) {
+    reads.clear();
+    popupGeometryReads = 0;
+    harness.runIdle();
+    assert.ok((reads.get(popup) || 0) <= 1, "ancestor text is reused by all descendant checks");
+    assert.ok(popupGeometryReads <= 1, "an ancestor is inspected only once per slice");
+    for (const label of labels) {
+      assert.ok((reads.get(label) || 0) <= 1, "discovery and candidate signatures share bounded text");
+    }
+  }
+  assert.equal(sampledNodes.has(popup), true, "the shared popup was inspected");
+  assert.equal(labels.every((label) => sampledNodes.has(label)), true, "every candidate was discovered");
+  assert.notEqual(popup.style.getPropertyValue("visibility"), "hidden");
+});
+
+test("character-data mutations refresh ancestor text and detect a newly blocking modal", async () => {
+  const harness = await loadContentHarness();
+  const popup = harness.createSurface({ className: "popup", rect: { width: 700, height: 280 } });
+  const label = harness.createElement("span", {}, "Welcome to the site");
+  Object.defineProperty(popup, "textContent", { get: () => label.textContent });
+  popup.appendChild(label);
+  harness.append(popup);
+  await settleMutations(2);
+  assert.notEqual(popup.style.getPropertyValue("visibility"), "hidden");
+
+  label.textContent = "AdBlock detected. Disable your ad blocker to continue.";
+  harness.document._notify({ type: "characterData", target: { nodeType: 3, parentElement: label, parentNode: label } });
+  await settleMutations(2);
+  assertSuppressed(popup, "text-mutated modal");
+});
+
+test("attribute mutations reconsider overlays that originally had no rendered geometry", async () => {
+  const harness = await loadContentHarness();
+  const popup = harness.createSurface({
+    className: "popup", text: "AdBlock detected. Disable your ad blocker to continue."
+  });
+  harness.append(popup);
+  await settleMutations(2);
+  assert.notEqual(popup.style.getPropertyValue("visibility"), "hidden");
+
+  popup.rect = { width: 700, height: 280 };
+  popup.style.setProperty("position", "fixed");
+  await settleMutations(2);
+  assertSuppressed(popup, "newly rendered modal");
+});
+
+test("child-list mutations refresh a modal after inserting a blocker warning", async () => {
+  const harness = await loadContentHarness();
+  const popup = harness.createSurface({ className: "popup", rect: { width: 700, height: 280 } });
+  Object.defineProperty(popup, "textContent", {
+    get: () => popup.children.map((child) => child.textContent).join(" ")
+  });
+  harness.append(popup);
+  await settleMutations(2);
+  assert.notEqual(popup.style.getPropertyValue("visibility"), "hidden");
+
+  popup.appendChild(harness.createElement("span", {}, "AdBlock detected. Disable your ad blocker to continue."));
+  await settleMutations(2);
+  assertSuppressed(popup, "child-mutated modal");
+});
+
+test("metadata and nonrendered subtrees are never inspected during discovery or mutations", async () => {
+  const harness = await loadContentHarness({ manualIdle: true });
+  const head = harness.createElement("head");
+  const title = harness.createElement("title", { "data-test-candidate": "" }, "Advertisement reference");
+  const nested = harness.createElement("span", { "data-test-candidate": "" }, "Sponsored");
+  const script = harness.createElement("script");
+  script.appendChild(nested);
+  head.append(title, script);
+  harness.document.documentElement.appendChild(head);
+  const readNodes = new Set();
+  const readText = harness.engine.readText;
+  harness.engine.readText = (element, ...args) => { readNodes.add(element); return readText(element, ...args); };
+  const classified = new Set();
+  harness.engine.classify = (element) => { classified.add(element); return { blocked: false }; };
+  await settleMutations(1);
+  while (harness.idleCallbacks.length) harness.runIdle();
+  title.setAttribute("class", "advertisement");
+  nested.setAttribute("aria-label", "Sponsored");
+  harness.document._notify({ type: "characterData", target: { nodeType: 3, parentElement: title, parentNode: title } });
+  await settleMutations(1);
+  while (harness.idleCallbacks.length) harness.runIdle();
+  for (const node of [head, title, script, nested]) {
+    assert.equal(readNodes.has(node), false, `${node.tagName} text is never sampled`);
+    assert.equal(classified.has(node), false, `${node.tagName} is never classified`);
+    assert.notEqual(node.style.getPropertyValue("visibility"), "hidden");
+  }
+});
+
+test("adblock-named diagnostic controls remain visible even when they mention disabling blockers", async () => {
+  const harness = await loadContentHarness();
+  const control = harness.createElement("button", { id: "adblock-host-list" }, "Disable your ad blocker to compare test results");
+  control.rect = { width: 240, height: 40 };
+  harness.append(control);
+  await settleMutations(2);
+  assert.notEqual(control.style.getPropertyValue("visibility"), "hidden");
 });

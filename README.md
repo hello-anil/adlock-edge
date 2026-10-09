@@ -1,8 +1,17 @@
 # AdLock
 
+Latest patch: **2.1.8** adds the compact Spider Royal card, a larger original logo, locally bundled comic-style fonts, golden spider web, and clearer paused controls. It retains the preview, settings synchronization, privacy, navigation, and filtering fixes from previous releases. Update the files in your existing unpacked folder, then click **Reload** at `edge://extensions` or `chrome://extensions` and reload open pages. Keep the existing registration to retain settings; export settings before removing an extension or switching folders.
+
+Block ads, trackers and unwanted popups with controls that stay on your device. Use the toolbar to pause a site or choose Relaxed, Balanced or Strict protection. If a page breaks, switch to Balanced or pause the site and reload.
+
+Download the packaged extension from [GitHub Releases](https://github.com/hello-anil/adlock-edge/releases/tag/v2.1.8). The source is available under the MIT license; the bundled Bangers font includes its own OFL license.
+
 AdLock is a local-first Manifest V3 blocker for Chrome, Edge, Brave, and other Chromium browsers. It combines packaged network rules with an incremental page classifier, popup and redirect protection, dynamic local reputation, privacy API controls, fingerprint resistance, and conditional cosmetic filters. Filter data, settings, reputation evidence, and statistics remain on the device; the extension does not download remote code or send browsing data elsewhere.
 
 Strict protection is the default for new installations. Existing installations keep their saved level and site exceptions.
+
+Version 2.1.0 makes local learning opt-in for new installations and restricts learned blocking to Strict mode. Existing saved learning choices are preserved; incognito tabs never add learned evidence. The popup checks installed network configuration before reporting it active. Settings now supports reviewed backup restoration and privacy-minimized support diagnostics. See [CHANGELOG.md](CHANGELOG.md) for migration details.
+
 
 ## Protection architecture
 
@@ -54,7 +63,9 @@ Redirect wrappers are decoded recursively with hard limits: at most three nested
 
 The DOM scanner is mutation-driven and processes candidates in bounded batches. It discovers open shadow roots, gives each one its own observer, and recursively scans newly exposed roots. Periodic maintenance prunes disconnected state, rechecks ad surfaces that page scripts may have restored, and resumes scanning after page visibility or back/forward-cache transitions. Every eligible frame receives its own content scripts through `all_frames` and origin fallback matching.
 
-To protect the host page's responsiveness, each classifier slice is capped at 350 elements and 6 milliseconds. Mutation records drive subsequent work; periodic maintenance only revisits tracked hidden surfaces instead of repeatedly walking the full document. Custom selectors use one fast-path match before resolving the exact matching rule.
+To protect the host page's responsiveness, each scanner task handles at most 350 elements and yields after a 6-millisecond time budget (an individual element can overrun that budget). Mutation callbacks queue and deduplicate work instead of inspecting text and layout synchronously. Changed elements alternate with subtree discovery so animation churn cannot starve newly inserted ads. Pending scan roots are capped at 128; excess insertions trigger an incremental recovery sweep. Text inspection samples at most 4097 characters and 256 subtree nodes rather than copying entire feeds.
+
+Hidden tabs defer cosmetic scans until visible, while browser network rules remain active. Returning to a tab resumes pending work without a full-document rescan. Periodic maintenance only revisits tracked hidden surfaces. Custom selectors use one combined match before resolving the exact matching rule, and packaged ad-host lookups use hostname suffix sets. Ordinary embedded video and payment frames still require advertising evidence before they can be hidden.
 
 Closed shadow roots and browser-owned UI remain outside the extension's reach by design.
 
@@ -105,7 +116,41 @@ Run the reproducible local performance harness separately:
 ```powershell
 npm run benchmark
 npm run benchmark:assert
+npm run classification:verify
+npm run critical:verify
 ```
+
+The classification check loads the real extension in a disposable profile and verifies neutral links and diagnostic controls, real ad surfaces, late disclosure changes, open shadow roots, and pause restoration in Balanced and Strict modes.
+
+The critical regression check verifies hostile HTML channel spoofing, native-function exposure, same-tab and named-frame navigation, ordinary form submission, and editorial preservation with real extension APIs. Run `npm run critical:verify -- --packaged` to check the staged release.
+
+For live website comparisons with the extension actually loaded, run:
+
+```powershell
+npm run benchmark:live -- --runs=3
+```
+
+The Playwright CLI runner uses a disposable Chromium profile and compares disabled,
+Balanced, and Strict protection on BBC, CNN, Wikipedia, MDN, Amazon search, and
+the d3ward test page. It rotates mode order, clears cookies and HTTP cache before
+each visit, scrolls once to exercise dynamic content, and saves JSON measurements,
+CLI logs, and screenshots under `output/`. Use `--site=bbc,mdn` to select sites or
+`--no-screenshots` to skip images. Playwright Chromium and Playwright CLI are
+required; the runner can resolve an installed CLI, use `PLAYWRIGHT_CLI_PATH`, or
+invoke it through `npx`.
+
+Live results include page timings, total renderer task time, long tasks, transferred
+bytes, request failures, DNR match checks, and hidden-element samples. Failed
+navigations, HTTP errors, and detected access challenges remain in the raw report
+and are excluded from timing medians. A client-blocked request corroborated by a
+matching installed AdLock block rule is counted separately from transport errors;
+the DNR replay is hypothetical rather than a historical debug event. Hidden
+elements and third-party test scores are not independently labelled ad accuracy.
+Three repetitions provide a small local sample, not a universal effectiveness or
+speed score. Other site storage, consent, network conditions, and ad inventory can
+still differ between visits.
+
+
 
 Create the production upload package after validation:
 
@@ -119,7 +164,17 @@ that every packaged resource exists without creating an archive. The CI
 workflow runs the full unit, validation, performance, UI smoke, and packaging
 gates and uploads the same ZIP as a build artifact.
 
-It measures the popup's in-document ready mark, visible toggle feedback, extension message count per toggle, a 350-element classifier slice, narrow/wide overflow, offscreen-panel configuration, and relevant unpacked payload sizes. Results are machine-dependent, so compare runs on the same device; `benchmark:assert` enforces deliberately broad regression budgets rather than claiming universal field performance.
+After packaging, run `npm run release:verify` to load the staged release in a disposable Chromium profile and exercise real network configuration, settings restoration, diagnostics and the pause control. This requires Playwright's Chromium installation. Test profiles are kept under ignored `tmp/` and never use your everyday browser profile.
+
+To check native toolbar sizing, run `npm run popup:verify -- --edge --packaged` with Node.js 22+ and Edge installed. This opens the real action popup and verifies repeated frame geometry, pause/resume, mode changes and live counter updates. Add `--scale=1.25` or `--scale=1.5` to verify display scaling. Without `--edge`, it uses Playwright Chromium. Screenshots are saved under `output/playwright/`.
+
+Run `npm run popup:functionality:verify -- --packaged` to exercise the real toolbar against loaded extension APIs, including keyboard activation, saves, live counts, external settings, site restoration without losing input, and the Settings button. Add `--live` to include MDN, Wikipedia and BBC in the browser session and measure response timing with those tabs open, or `--edge` to run in installed Edge. Reports are saved under `output/benchmarks/`.
+
+Opening `ui/popup.html` directly runs an interactive preview with sample counters and no ad blocking. Demo choices are stored separately in the page's local storage; Settings opens a preview dialog with reset and close controls. For actual protection, load the extension and use its toolbar popup. Run `npm run popup:preview:verify` to verify standalone preview clicks, dropdown selection, persistence and dialog behavior.
+
+The release build also creates `dist/adlock-preview-2.1.8.html`. Open this single file in Chrome or Edge for a preview that includes its own scripts, styles and icons. Run `npm run popup:preview:verify -- --standalone --partial-chrome` after packaging to verify it without companion files and with partial preview-host Chrome APIs. A static file viewer that disables JavaScript cannot run interactive controls.
+
+It measures the popup's in-document ready mark, visible toggle feedback, extension message count per toggle, 350-element classifier throughput, narrow/wide overflow, offscreen-panel configuration, and relevant unpacked payload sizes. A real-browser scanner fixture inserts 1500 elements, checks all 150 ads are hidden while 1350 editorial cards remain visible, updates a disclosure label after insertion, and verifies pause restoration. Scanner task timings have a 50-millisecond regression budget. Results are machine-dependent; these local checks do not establish performance or compatibility on every live website.
 
 The validator checks Manifest V3 resources and parsing, globally unique DNR IDs, generated-artifact determinism, content-script ordering and frame coverage, version consistency, strict-only isolation, and icon dimensions.
 

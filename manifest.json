@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "AdLock",
-  "version": "2.0.0",
-  "description": "A private multi-layer ad, tracker, popup, redirect, and resource-abuse blocker with per-site controls.",
+  "version": "2.1.8",
+  "description": "Block ads, trackers and unwanted popups with local-first privacy, three protection levels and easy per-site controls.",
   "minimum_chrome_version": "120",
   "permissions": [
     "storage",

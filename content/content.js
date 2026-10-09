@@ -18,7 +18,7 @@
     showPlaceholders: false,
     redirectProtection: true,
     antiAdblockCompatibility: true,
-    dynamicFiltering: true,
+    dynamicFiltering: false,
     cleanTrackingParameters: true,
     privacyApiProtection: true,
     fingerprintProtection: true
@@ -32,6 +32,9 @@
     topLevelEnabled: globalThis.top && globalThis.top !== globalThis ? false : null,
     queue: new Set(),
     scheduled: false,
+    processing: false,
+    pendingAncestors: new WeakSet(),
+    scanOverflow: false,
     observer: null,
     shadowObservers: new Map(),
     scanJobs: [],
@@ -56,9 +59,16 @@
   };
 
   const MAX_QUEUE_SIZE = 5000;
+  const MAX_SCAN_JOBS = 128;
   const MAX_SHADOW_ROOTS = 64;
   const MAX_SCAN_NODES_PER_SLICE = 350;
   const MAX_SCAN_MILLISECONDS = 6;
+  const NON_RENDERED_TAG_RE = /^(?:HEAD|TITLE|BASE|LINK|META|SCRIPT|STYLE|TEMPLATE|NOSCRIPT)$/i;
+  const NON_RENDERED_SELECTOR = "head,title,base,link,meta,script,style,template,noscript";
+  // A slice runs synchronously. Discard its samples before yielding so text,
+  // attribute and child-list mutations always get fresh evidence next time.
+  let textSamples = null;
+  let inspectedOverlays = null;
   const now = globalThis.performance?.now?.bind(globalThis.performance) || Date.now;
   const OPEN_SHADOW_EVENT = "aas:open-shadow-root";
   const CONFIG_CHANNEL_ATTRIBUTE = "data-aas-config-channel";
@@ -89,10 +99,10 @@
   ]);
   const PROTECTED_CONTEXT_RE = /(?:^|\.)(?:challenges\.cloudflare\.com|recaptcha\.net|hcaptcha\.com|accounts\.google\.com|login\.microsoftonline\.com|paypal\.com|stripe\.com)$/i;
 
-  function isBlockingPromotionText(value) {
+  function isBlockingPromotionText(value, normalized = false) {
     const rawText = String(value || "");
     if (rawText.length < 20 || rawText.length > 2200) return false;
-    const text = engine.normalizeText(rawText);
+    const text = normalized ? rawText : engine.normalizeText(rawText);
     if (text.length < 20 || text.length > 1600) return false;
     let matches = 0;
     for (const pattern of BLOCKING_PROMOTION_PATTERNS) {
@@ -146,16 +156,28 @@
     return Boolean(state.settings.globalEnabled && state.topLevelEnabled !== false && !isSiteDisabled());
   }
 
+  function sampledText(element) {
+    if (textSamples?.has(element)) return textSamples.get(element);
+    const text = engine.normalizeText(engine.readText(element));
+    textSamples?.set(element, text);
+    return text;
+  }
+
+  function isNonRenderedSubtree(element) {
+    return NON_RENDERED_TAG_RE.test(element?.tagName || "") ||
+      Boolean(element?.closest?.(NON_RENDERED_SELECTOR));
+  }
+
   function candidateSignature(element) {
     const attributes = [
-      "id", "class", "style", "role", "aria-label", "title", "src", "srcdoc", "data-src", "poster",
+      "id", "class", "style", "role", "aria-label", "title", "data-testid", "src", "srcdoc", "data-src", "poster",
       "href", "target", "rel", "width", "height", "data-ad", "data-ad-slot", "data-ad-unit",
       "data-advertisement", "data-ad-type", "data-ad-format", "data-companion-ad",
       "data-ad-background", "data-sponsored", "data-promoted", "data-social-promo"
     ];
     return [
       ...attributes.map((name) => element.getAttribute?.(name) || ""),
-      engine.normalizeText(element.textContent || "").slice(0, 100)
+      sampledText(element).slice(0, 100)
     ].join("|");
   }
 
@@ -254,27 +276,39 @@
   function inspectAnnoyanceOverlay(element) {
     if (!state.enabled || !state.settings.antiAdblockCompatibility || isProtectedContext()) return;
     if (!element || element.nodeType !== Node.ELEMENT_NODE) return;
+    if (element === document.body || element === document.documentElement) return;
     if (state.hiddenElements.has(element)) {
       enforceHiddenStyles(element);
       return;
     }
-    const text = engine.normalizeText(element.textContent || "");
+    if (inspectedOverlays?.has(element)) return;
+    inspectedOverlays?.add(element);
+    if (isNonRenderedSubtree(element)) return;
+
+    // Reject ordinary inline controls and unrendered surfaces before reading
+    // ancestor text. An adblock-related id alone does not make a modal.
+    const structuralModal = element.matches?.("dialog,[role='dialog'],[aria-modal='true'],.modal,.popup,.overlay");
+    if (!structuralModal && /^(?:A|BUTTON|INPUT|SELECT|OPTION|TEXTAREA|LABEL)$/i.test(element.tagName)) return;
+    const rect = element.getBoundingClientRect?.();
+    const area = rect ? Math.max(0, rect.width) * Math.max(0, rect.height) : 0;
+    if (!area) return;
+    const identity = `${element.id || ""} ${String(element.className || "")}`;
+    const named = /(?:adblock|anti[-_ ]?ad|notification|interstitial)/i.test(identity);
+    const style = typeof getComputedStyle === "function" ? getComputedStyle(element) : null;
+    const modalLike = structuralModal || style?.position === "fixed";
+    const net77Surface = engine.hostnameMatches(hostname, "net77.cc") && element.matches?.(".hhhhppp");
+    if (!named && !modalLike && !net77Surface) return;
+
+    const text = sampledText(element);
     const antiAdblock = engine.isAntiAdblockMessage(text);
     const notificationNag = text.length <= 900 && NOTIFICATION_PROMPT_RE.test(text);
     const deceptiveCallNotification = text.length <= 900 && DECEPTIVE_CALL_NOTIFICATION_RE.test(text);
-    const blockingPromotion = isBlockingPromotionText(text);
+    const blockingPromotion = isBlockingPromotionText(text, true);
     if (!antiAdblock && !notificationNag && !deceptiveCallNotification && !blockingPromotion) return;
 
-    const rect = element.getBoundingClientRect?.();
-    const area = rect ? Math.max(0, rect.width) * Math.max(0, rect.height) : 0;
     const viewportArea = Math.max(1, globalThis.innerWidth * globalThis.innerHeight);
-    const identity = `${element.id || ""} ${String(element.className || "")}`;
-    const style = typeof getComputedStyle === "function" ? getComputedStyle(element) : null;
-    const modalLike = element.matches?.("dialog,[role='dialog'],[aria-modal='true'],.modal,.popup,.overlay") ||
-      style?.position === "fixed";
-    const named = /(?:adblock|anti[-_ ]?ad|notification|interstitial)/i.test(identity);
     const net77Warning = engine.hostnameMatches(hostname, "net77.cc") && antiAdblock && (
-      element.matches?.(".hhhhppp") ||
+      net77Surface ||
       (style?.position === "fixed" && /AdBlock\s*\/\s*DNS Blocking detected/i.test(text))
     );
     if (deceptiveCallNotification && !modalLike) return;
@@ -310,6 +344,7 @@
   function inspectAnnoyanceAncestors(element) {
     let current = element?.nodeType === Node.ELEMENT_NODE ? element : element?.parentElement;
     for (let depth = 0; current && depth < 8; depth += 1, current = composedParent(current)) {
+      if (current === document.body || current === document.documentElement) break;
       inspectAnnoyanceOverlay(current);
     }
   }
@@ -434,18 +469,31 @@
 
   function processQueue(deadline) {
     state.scheduled = false;
+    if (!state.enabled || document.hidden || state.contextInvalidated) return;
+    state.processing = true;
+    textSamples = new WeakMap();
+    inspectedOverlays = new WeakSet();
     const startedAt = now();
     let processed = 0;
-    for (const element of state.queue) {
-      state.queue.delete(element);
-      inspect(element);
-      processed += 1;
-      state.processedSincePrune += 1;
-      if (processed >= MAX_SCAN_NODES_PER_SLICE || now() - startedAt >= MAX_SCAN_MILLISECONDS || (deadline && deadline.timeRemaining() < 2)) break;
-    }
-    while (state.scanJobs.length && processed < MAX_SCAN_NODES_PER_SLICE && now() - startedAt < MAX_SCAN_MILLISECONDS) {
+    // Alternate changed elements and discovery so animation churn cannot starve
+    // newly inserted ads. All text/layout inspection runs inside this budget.
+    while ((state.queue.size || state.scanJobs.length) && processed < MAX_SCAN_NODES_PER_SLICE) {
+      if (processed && (now() - startedAt >= MAX_SCAN_MILLISECONDS ||
+          (deadline && !deadline.didTimeout && deadline.timeRemaining() < 2))) break;
+      if (state.queue.size && (!state.scanJobs.length || processed % 2 === 0)) {
+        const element = state.queue.values().next().value;
+        state.queue.delete(element);
+        inspectTreeElement(element, true);
+        if (state.pendingAncestors.has(element)) {
+          state.pendingAncestors.delete(element);
+          if (element.isConnected !== false) inspectAnnoyanceAncestors(element);
+        }
+        processed += 1;
+        state.processedSincePrune += 1;
+        continue;
+      }
       const job = state.scanJobs[0];
-      const element = job.next();
+      const element = job.root.isConnected === false ? null : job.next();
       if (!element) {
         state.scanJobs.shift();
         state.scanRoots.delete(job.root);
@@ -453,14 +501,21 @@
       }
       inspectTreeElement(element, job.includeTextMarkers);
       processed += 1;
-      if (deadline && deadline.timeRemaining() < 2) break;
+    }
+    textSamples = null;
+    inspectedOverlays = null;
+    state.processing = false;
+    if (state.scanOverflow && !state.scanJobs.length) {
+      state.scanOverflow = false;
+      enqueueTree(document.documentElement, true);
+      for (const root of state.shadowObservers.keys()) enqueueTree(root, true);
     }
     if (state.processedSincePrune >= 1000) pruneDisconnectedState();
     if (state.queue.size || state.scanJobs.length) scheduleProcessing();
   }
 
   function scheduleProcessing() {
-    if (state.scheduled || !state.enabled) return;
+    if (state.scheduled || state.processing || !state.enabled || document.hidden) return;
     state.scheduled = true;
     if (typeof requestIdleCallback === "function") {
       requestIdleCallback(processQueue, { timeout: 250 });
@@ -469,30 +524,36 @@
     }
   }
 
-  function enqueue(element) {
+  function enqueue(element, inspectAncestors = false) {
     if (!state.enabled || !element || element.nodeType !== Node.ELEMENT_NODE || element.isConnected === false) return;
+    if (isNonRenderedSubtree(element)) return;
     if (state.queue.size >= MAX_QUEUE_SIZE && !state.queue.has(element)) {
       state.queue.delete(state.queue.values().next().value);
+      state.scanOverflow = true;
     }
+    if (inspectAncestors) state.pendingAncestors.add(element);
     state.queue.add(element);
     scheduleProcessing();
   }
 
   function inspectTreeElement(element, includeTextMarkers) {
     if (!element || element.nodeType !== Node.ELEMENT_NODE || element.isConnected === false) return;
+    if (NON_RENDERED_TAG_RE.test(element.tagName) || /^(?:HTML|BODY)$/i.test(element.tagName)) {
+      if (element === document.body || element === document.documentElement) inspectAdBackground(element);
+      return;
+    }
+    if (state.hiddenElements.has(element)) {
+      enforceHiddenStyles(element);
+      return;
+    }
+    if (element.closest?.(".aas-placeholder,.aas-redirect-notice")) return;
     if (element.matches?.(ANNOYANCE_SELECTOR)) inspectAnnoyanceOverlay(element);
     inspectAdBackground(element);
-    if (element.matches?.(engine.CANDIDATE_SELECTOR)) enqueue(element);
-    for (const selector of state.settings.customSelectors) {
-      try {
-        if (element.matches?.(selector)) enqueue(element);
-      } catch (_error) {
-        // Ignore invalid selectors from manually edited storage.
-      }
-    }
+    let candidate = element.matches?.(engine.CANDIDATE_SELECTOR) ||
+      (state.customSelectorQuery && element.matches?.(state.customSelectorQuery));
     if (includeTextMarkers && (element.children?.length || 0) <= 2) {
-      if (engine.hasMarkerText(element)) enqueue(element);
-      const text = engine.normalizeText(element.textContent || "");
+      const text = sampledText(element);
+      if (engine.hasMarkerText(element, text)) candidate = true;
       if (text.length <= 900 && DECEPTIVE_CALL_NOTIFICATION_RE.test(text)) {
         inspectAnnoyanceAncestors(element);
       }
@@ -500,16 +561,22 @@
         inspectAnnoyanceAncestors(element);
       }
     }
-    if ((element.children?.length || 0) <= 8 && isBlockingPromotionText(element.textContent || "")) {
+    if ((element.children?.length || 0) <= 8 && isBlockingPromotionText(sampledText(element), true)) {
       inspectAnnoyanceAncestors(element);
     }
+    if (candidate) inspect(element);
     registerShadowRoot(element.shadowRoot);
   }
 
   function makeScanJob(root, includeTextMarkers) {
     let first = root.nodeType === Node.ELEMENT_NODE ? root : null;
     if (typeof document.createTreeWalker === "function" && globalThis.NodeFilter?.SHOW_ELEMENT) {
-      const walker = document.createTreeWalker(root, globalThis.NodeFilter.SHOW_ELEMENT);
+      const walker = document.createTreeWalker(root, globalThis.NodeFilter.SHOW_ELEMENT, {
+        acceptNode(element) {
+          return NON_RENDERED_TAG_RE.test(element.tagName)
+            ? globalThis.NodeFilter.FILTER_REJECT : globalThis.NodeFilter.FILTER_ACCEPT;
+        }
+      });
       return {
         root,
         includeTextMarkers,
@@ -524,13 +591,21 @@
       };
     }
     const fallback = first ? [first] : [];
-    fallback.push(...(root.querySelectorAll?.("*") || []));
+    fallback.push(...(root.querySelectorAll?.("*") || []).filter((element) => !isNonRenderedSubtree(element)));
     let index = 0;
     return { root, includeTextMarkers, next: () => fallback[index++] || null };
   }
 
   function enqueueTree(root, includeTextMarkers) {
     if (!state.enabled || !root || ![Node.ELEMENT_NODE, 11].includes(root.nodeType) || state.scanRoots.has(root)) return;
+    if (root.nodeType === Node.ELEMENT_NODE && isNonRenderedSubtree(root)) return;
+    if (root.isConnected === false) return;
+    if (state.scanJobs.length >= MAX_SCAN_JOBS) {
+      // Recover with a bounded incremental sweep rather than retaining an
+      // unbounded list of DOM roots or silently dropping the excess ads.
+      state.scanOverflow = true;
+      return;
+    }
     state.scanRoots.add(root);
     state.scanJobs.push(makeScanJob(root, includeTextMarkers));
     scheduleProcessing();
@@ -547,15 +622,14 @@
           mutation.addedNodes.forEach((node) => {
             if (node.nodeType === Node.ELEMENT_NODE) enqueueTree(node, true);
           });
-          inspectAnnoyanceAncestors(mutation.target);
+          state.lastSignatures.delete(mutation.target);
+          enqueue(mutation.target, true);
         } else if (mutation.type === "attributes") {
           state.lastSignatures.delete(mutation.target);
           enqueue(mutation.target);
-          inspectAnnoyanceOverlay(mutation.target);
-          inspectAdBackground(mutation.target);
         } else if (mutation.type === "characterData") {
-          enqueue(mutation.target.parentElement);
-          inspectAnnoyanceAncestors(mutation.target);
+          state.lastSignatures.delete(mutation.target.parentElement);
+          enqueue(mutation.target.parentElement, true);
         }
       }
   }
@@ -566,7 +640,7 @@
     characterData: true,
     attributes: true,
     attributeFilter: [
-      "id", "class", "style", "role", "aria-label", "aria-modal", "title", "src", "srcdoc", "data-src", "poster",
+      "id", "class", "style", "role", "aria-label", "aria-modal", "title", "data-testid", "src", "srcdoc", "data-src", "poster",
       "href", "target", "rel", "width", "height", "data-ad", "data-ad-slot", "data-ad-unit",
       "data-advertisement", "data-ad-type", "data-ad-format", "data-companion-ad",
       "data-ad-background", "data-sponsored", "data-promoted", "data-social-promo"
@@ -613,7 +687,7 @@
     state.maintenanceTimer = setTimeout(() => {
       if (!state.enabled || state.contextInvalidated) return;
       if (!document.hidden) {
-        for (const element of state.hiddenElements) enforceHiddenStyles(element);
+        for (const element of state.hiddenElements) enqueue(element);
         pruneDisconnectedState();
         for (const [root, observer] of state.shadowObservers) {
           if (root.isConnected !== false) continue;
@@ -626,9 +700,10 @@
     state.maintenanceTimer?.unref?.();
   }
 
-  function handlePageResume() {
+  function handlePageResume(event) {
     if (!state.enabled || document.hidden || !document.documentElement) return;
-    enqueueTree(document.documentElement, true);
+    if (event?.type !== "visibilitychange") enqueueTree(document.documentElement, true);
+    scheduleProcessing();
     scheduleMaintenance();
   }
 
@@ -830,6 +905,8 @@
       state.queue.clear();
       state.scanJobs.length = 0;
       state.scanRoots = new WeakSet();
+      state.scanOverflow = false;
+      state.pendingAncestors = new WeakSet();
       clearTimeout(state.maintenanceTimer);
       state.maintenanceTimer = null;
       unhideAll();
@@ -837,6 +914,10 @@
     } else {
       if (pagePolicyChanged) {
         state.queue.clear();
+        state.scanJobs.length = 0;
+        state.scanRoots = new WeakSet();
+        state.scanOverflow = false;
+        state.pendingAncestors = new WeakSet();
         unhideAll();
         state.lastSignatures = new WeakMap();
       }

@@ -4,35 +4,39 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AdLock</title>
+  <script src="popup-layout.js"></script>
+  <link rel="stylesheet" href="fonts.css">
   <link rel="stylesheet" href="popup.css">
 </head>
 <body class="is-loading">
   <main class="shell" aria-busy="true">
+    <img class="web-texture" src="web.svg" alt="" aria-hidden="true">
     <header class="topbar">
-      <div class="identity">
-        <img class="brand-mark" src="../assets/icons/icon-48.png" alt="">
-        <div><h1>AdLock</h1><p id="statusText" aria-live="polite">Checking protection…</p></div>
+      <img class="brand-mark" src="../assets/icons/icon-48.png" alt="">
+      <div class="brand-copy">
+        <h1>AdLock</h1>
+        <p id="statusText" aria-live="polite">Checking protection…</p>
       </div>
-      <button id="globalToggle" class="power" type="button" aria-label="Toggle protection everywhere" aria-pressed="true">
+      <button id="globalToggle" class="power" type="button" aria-label="Toggle protection everywhere" aria-pressed="true" disabled>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v10M6.3 5.7a8 8 0 1 0 11.4 0"/></svg>
       </button>
     </header>
 
     <section class="hero" aria-labelledby="pageCountLabel">
-      <div class="shield-ring"><span id="pageCount">0</span><small id="pageCountLabel">blocked on this page</small></div>
-      <div class="network-state"><span class="pulse" aria-hidden="true"></span><span id="networkText">Network filtering active</span></div>
+      <div class="shield-ring"><span id="pageCount">0</span><small id="pageCountLabel">Hidden here</small></div>
+      <div class="network-state"><span class="pulse" aria-hidden="true"></span><span id="networkText">Checking network filtering...</span></div>
     </section>
 
     <section class="controls" aria-label="Protection controls">
       <div class="site-card">
         <div class="site-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.2 2.5 3.4 5.5 3.4 9S14.2 18.5 12 21c-2.2-2.5-3.4-5.5-3.4-9S9.8 5.5 12 3Z"/></svg></div>
         <div class="site-copy"><span class="eyebrow">CURRENT SITE</span><strong id="hostname">Unsupported page</strong></div>
-        <button id="siteToggle" class="switch" type="button" role="switch" aria-checked="true" aria-label="Toggle protection on this site"><span></span></button>
+        <button id="siteToggle" class="switch" type="button" role="switch" aria-checked="true" aria-label="Toggle protection on this site" disabled><span></span></button>
       </div>
 
       <label class="level-row" for="levelSelect">
-        <span><strong>Protection level</strong><small id="levelHint">Balanced blocking with conservative detection</small></span>
-        <select id="levelSelect"><option value="relaxed">Relaxed</option><option value="balanced">Balanced</option><option value="strict">Strict</option></select>
+        <span><strong>Protection</strong><small id="levelHint">Balanced blocking with conservative detection</small></span>
+        <select id="levelSelect" aria-describedby="levelHint" disabled><option value="relaxed">Relaxed</option><option value="balanced">Balanced</option><option value="strict">Strict</option></select>
       </label>
     </section>
 
@@ -43,10 +47,19 @@
     </section>
 
     <footer>
-      <button id="optionsButton" type="button">Settings <span aria-hidden="true">→</span></button>
+      <button id="optionsButton" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg>Settings</button>
+      <p class="credit">BY ANIL</p>
       <span><i aria-hidden="true"></i> Local only</span>
     </footer>
   </main>
+  <dialog id="previewDialog" aria-labelledby="previewTitle">
+    <h2 id="previewTitle">Preview settings</h2>
+    <p>This demo does not block ads. Open AdLock from your browser toolbar for real protection.</p>
+    <div class="preview-actions">
+      <button id="previewReset" type="button">Reset demo</button>
+      <button id="previewClose" type="button">Close</button>
+    </div>
+  </dialog>
   <script src="popup.js"></script>
 </body>
 </html>

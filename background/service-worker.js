@@ -9,7 +9,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   showPlaceholders: false,
   redirectProtection: true,
   antiAdblockCompatibility: true,
-  dynamicFiltering: true,
+  dynamicFiltering: false,
   cleanTrackingParameters: true,
   privacyApiProtection: true,
   fingerprintProtection: true
@@ -105,7 +105,7 @@ function normalizeSettings(value) {
     showPlaceholders: candidate.showPlaceholders === true,
     redirectProtection: candidate.redirectProtection !== false,
     antiAdblockCompatibility: candidate.antiAdblockCompatibility !== false,
-    dynamicFiltering: candidate.dynamicFiltering !== false,
+    dynamicFiltering: candidate.dynamicFiltering === true,
     cleanTrackingParameters: candidate.cleanTrackingParameters !== false,
     privacyApiProtection: candidate.privacyApiProtection !== false,
     fingerprintProtection: candidate.fingerprintProtection !== false
@@ -247,7 +247,7 @@ async function getDynamicReputation() {
 
 function buildDynamicRules(settings, reputation = { version: REPUTATION_VERSION, entries: {} }) {
   if (!settings.globalEnabled) return [];
-  const learnedDomains = settings.dynamicFiltering ? promotedReputationDomains(reputation) : [];
+  const learnedDomains = settings.dynamicFiltering && settings.level === "strict" ? promotedReputationDomains(reputation) : [];
   return [
     ...(settings.disabledSites.length ? buildSiteAllowRules(settings.disabledSites) : []),
     ...(settings.customBlockDomains.length ? [buildCustomBlockRule(settings.customBlockDomains)] : []),
@@ -255,8 +255,8 @@ function buildDynamicRules(settings, reputation = { version: REPUTATION_VERSION,
   ];
 }
 
-async function syncNetworkConfiguration(settings) {
-  const desiredRulesets = settings.globalEnabled
+function desiredNetworkRulesets(settings) {
+  return settings.globalEnabled
     ? [
         "core_ads",
         "generated_ads",
@@ -266,20 +266,63 @@ async function syncNetworkConfiguration(settings) {
         ...(settings.level === "strict" ? ["privacy_strict", "generated_strict"] : [])
       ]
     : [];
-  const enabledRulesets = await chrome.declarativeNetRequest.getEnabledRulesets();
-  await chrome.declarativeNetRequest.updateEnabledRulesets({
-    enableRulesetIds: desiredRulesets.filter((id) => !enabledRulesets.includes(id)),
-    disableRulesetIds: enabledRulesets.filter((id) => !desiredRulesets.includes(id))
-  });
+}
 
-  const [currentRules, reputation] = await Promise.all([
+async function syncNetworkConfiguration(settings) {
+  const desiredRulesets = desiredNetworkRulesets(settings);
+  const [enabledRulesets, currentRules, reputation] = await Promise.all([
+    chrome.declarativeNetRequest.getEnabledRulesets(),
     chrome.declarativeNetRequest.getDynamicRules(),
     getDynamicReputation()
   ]);
-  await chrome.declarativeNetRequest.updateDynamicRules({
-    removeRuleIds: currentRules.filter((rule) => isOwnedDynamicRuleId(rule.id)).map((rule) => rule.id),
-    addRules: buildDynamicRules(settings, reputation)
-  });
+  const enableRulesetIds = desiredRulesets.filter((id) => !enabledRulesets.includes(id));
+  const disableRulesetIds = enabledRulesets.filter((id) => !desiredRulesets.includes(id));
+  if (enableRulesetIds.length || disableRulesetIds.length) {
+    await chrome.declarativeNetRequest.updateEnabledRulesets({ enableRulesetIds, disableRulesetIds });
+  }
+  const ownedRules = currentRules.filter((rule) => isOwnedDynamicRuleId(rule.id));
+  const desiredRules = buildDynamicRules(settings, reputation);
+  if (JSON.stringify(canonicalRuleValue(ownedRules)) !== JSON.stringify(canonicalRuleValue(desiredRules))) {
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: ownedRules.map((rule) => rule.id),
+      addRules: desiredRules
+    });
+  }
+}
+
+function canonicalRuleValue(value) {
+  if (Array.isArray(value)) return value.map(canonicalRuleValue).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalRuleValue(value[key])]));
+  }
+  return value;
+}
+
+async function inspectNetworkHealth(settings) {
+  try {
+    const [enabled, actualRules, reputation] = await Promise.all([
+      chrome.declarativeNetRequest.getEnabledRulesets(),
+      chrome.declarativeNetRequest.getDynamicRules(),
+      getDynamicReputation()
+    ]);
+    const desired = desiredNetworkRulesets(settings);
+    const staticMatch = enabled.length === desired.length && desired.every((id) => enabled.includes(id));
+    const owned = actualRules.filter((rule) => isOwnedDynamicRuleId(rule.id));
+    const expected = buildDynamicRules(settings, reputation);
+    const dynamicMatch = JSON.stringify(canonicalRuleValue(owned)) === JSON.stringify(canonicalRuleValue(expected));
+    return {
+      status: staticMatch && dynamicMatch ? (settings.globalEnabled ? "active" : "paused") : "degraded",
+      enabledRulesets: enabled.length,
+      expectedRulesets: desired.length,
+      dynamicRules: owned.length
+    };
+  } catch (_error) {
+    return { status: "unavailable" };
+  }
+}
+
+async function settingsResponse(settings) {
+  return { settings, networkHealth: await inspectNetworkHealth(settings) };
 }
 
 function enqueueConfiguration(operation) {
@@ -376,16 +419,25 @@ async function injectContentIntoTab(tab, settings) {
 }
 
 async function reinjectContentIntoOpenTabs() {
-  const [tabs, settings] = await Promise.all([
-    chrome.tabs.query({ url: ["http://*/*", "https://*/*"] }),
-    getSettings()
-  ]);
-  await Promise.allSettled(tabs.filter(isHttpTab).map((tab) => injectContentIntoTab(tab, settings)));
+  return enqueueConfiguration(async () => {
+    const [tabs, settings] = await Promise.all([
+      chrome.tabs.query({ url: ["http://*/*", "https://*/*"] }),
+      getSettings()
+    ]);
+    await Promise.allSettled(tabs.filter(isHttpTab).map((tab) => injectContentIntoTab(tab, settings)));
+  });
 }
 
-async function reconcileConditionalCssInOpenTabs(settings) {
+function conditionalCssMode(settings, hostname) {
+  if (!protectionIsEnabledForHostname(settings, hostname)) return "off";
+  return settings.level === "strict" ? "strict" : "standard";
+}
+
+async function reconcileConditionalCssInOpenTabs(settings, previousSettings = null) {
   const tabs = await chrome.tabs.query({ url: ["http://*/*", "https://*/*"] });
-  await Promise.allSettled(tabs.filter(isHttpTab).map((tab) =>
+  const changedTabs = tabs.filter(isHttpTab).filter((tab) => !previousSettings ||
+    conditionalCssMode(settings, hostnameForTab(tab)) !== conditionalCssMode(previousSettings, hostnameForTab(tab)));
+  await Promise.allSettled(changedTabs.map((tab) =>
     reconcileConditionalCss({ tabId: tab.id, allFrames: true }, settings, hostnameForTab(tab))
   ));
 }
@@ -394,17 +446,20 @@ function mutateSettings(mutator) {
   return enqueueConfiguration(async () => {
     const current = await getSettings();
     const settings = normalizeSettings(mutator(current));
+    let cssReconciled = false;
     try {
       await syncNetworkConfiguration(settings);
+      // Storage listeners restore inline styles immediately. Remove USER CSS
+      // first so those mutations also restore layout inside open shadow roots.
+      await reconcileConditionalCssInOpenTabs(settings, current).catch(() => {});
+      cssReconciled = true;
       await chrome.storage.local.set({ settings });
     } catch (error) {
       await syncNetworkConfiguration(current).catch(() => {});
+      if (cssReconciled) await reconcileConditionalCssInOpenTabs(current, settings).catch(() => {});
       throw new Error(`Unable to apply protection settings: ${error?.message || error}`);
     }
-    await Promise.allSettled([
-      broadcastSettings(settings),
-      reconcileConditionalCssInOpenTabs(settings)
-    ]);
+    await broadcastSettings(settings).catch(() => {});
     return settings;
   });
 }
@@ -418,14 +473,20 @@ function reconcileStoredConfiguration({ persist = false } = {}) {
   });
 }
 
+function notifyPopupPageCount(tabId, pageHidden) {
+  // No listener is normal when the toolbar popup is closed.
+  chrome.runtime.sendMessage({ type: "popup:pageCount", tabId, pageHidden }).catch(() => {});
+}
+
 function recordBlocked(message, sender) {
   const amount = Math.max(0, Math.min(10000, Number(message.count) || 0));
   const host = cleanDomain(message.hostname);
   if (!amount) return Promise.resolve();
 
-  if (sender.tab?.id) {
+  if (Number.isInteger(sender.tab?.id)) {
     const aggregate = (tabHiddenCounts.get(sender.tab.id) || 0) + amount;
     tabHiddenCounts.set(sender.tab.id, aggregate);
+    notifyPopupPageCount(sender.tab.id, aggregate);
     const badge = Math.min(999, aggregate);
     chrome.action.setBadgeBackgroundColor({ tabId: sender.tab.id, color: "#5D6EF6" }).catch(() => {});
     chrome.action.setBadgeText({ tabId: sender.tab.id, text: badge ? String(badge) : "" }).catch(() => {});
@@ -477,7 +538,7 @@ function recordReputationSignal(message, sender) {
 
 async function recordReputationSignalNow(message, sender) {
   const settings = await getSettings();
-  if (!settings.globalEnabled || !settings.dynamicFiltering || settings.level !== "strict") {
+  if (sender?.tab?.incognito || !settings.globalEnabled || !settings.dynamicFiltering || settings.level !== "strict") {
     return { accepted: false, promoted: false };
   }
 
@@ -485,7 +546,7 @@ async function recordReputationSignalNow(message, sender) {
   const targetHostname = cleanDomain(message.targetHostname);
   const evidence = String(message.evidence || "");
   const weight = REPUTATION_EVIDENCE_WEIGHTS[evidence];
-  if (!sourceHostname || !targetHostname || !weight ||
+  if (!protectionIsEnabledForHostname(settings, sourceHostname) || !targetHostname || !weight ||
       sameSiteApproximation(sourceHostname, targetHostname) || protectedReputationDomain(targetHostname)) {
     return { accepted: false, promoted: false };
   }
@@ -680,16 +741,21 @@ async function handleMessage(message, sender) {
   switch (message?.type) {
     case "content:ready":
       if (Number.isInteger(sender.tab?.id)) {
-        const frameId = Number.isInteger(sender.frameId) ? sender.frameId : 0;
-        const topLevelHostname = hostnameForTab(sender.tab);
-        const settings = await getSettings();
-        const topLevelEnabled = protectionIsEnabledForHostname(settings, topLevelHostname);
-        await reconcileConditionalCss({ tabId: sender.tab.id, frameIds: [frameId] }, settings, topLevelHostname);
-        if (frameId === 0) {
-          tabHiddenCounts.set(sender.tab.id, 0);
-          await chrome.action.setBadgeText({ tabId: sender.tab.id, text: "" });
-        }
-        return { ok: true, topLevelEnabled };
+        return enqueueConfiguration(async () => {
+          // Read settings and reconcile this frame together, so a frame that
+          // becomes ready during a pause cannot reinstall the previous CSS.
+          const frameId = Number.isInteger(sender.frameId) ? sender.frameId : 0;
+          const topLevelHostname = hostnameForTab(sender.tab);
+          const settings = await getSettings();
+          const topLevelEnabled = protectionIsEnabledForHostname(settings, topLevelHostname);
+          await reconcileConditionalCss({ tabId: sender.tab.id, frameIds: [frameId] }, settings, topLevelHostname);
+          if (frameId === 0) {
+            tabHiddenCounts.set(sender.tab.id, 0);
+            notifyPopupPageCount(sender.tab.id, 0);
+            await chrome.action.setBadgeText({ tabId: sender.tab.id, text: "" });
+          }
+          return { ok: true, topLevelEnabled };
+        });
       }
       return { ok: true };
     case "content:blocked":
@@ -704,32 +770,41 @@ async function handleMessage(message, sender) {
       await allowRedirectOnce(message.url, sender);
       return { ok: true };
     case "popup:getState": {
+      await configurationQueue;
       const [settings, stats] = await Promise.all([getSettings(), getStats()]);
       return {
         settings,
         stats,
+        networkHealth: await inspectNetworkHealth(settings),
         pageHidden: Number.isInteger(message.tabId) ? (tabHiddenCounts.get(message.tabId) || 0) : 0
       };
     }
     case "settings:update": {
-      return { settings: await mutateSettings((current) => ({ ...current, ...(message.patch || {}) })) };
+      return settingsResponse(await mutateSettings((current) => ({ ...current, ...(message.patch || {}) })));
     }
     case "site:setEnabled": {
       const domain = cleanDomain(message.hostname);
       if (!domain) throw new Error("Invalid site hostname");
-      return {
-        settings: await mutateSettings((current) => {
+      return settingsResponse(await mutateSettings((current) => {
           const disabled = new Set(current.disabledSites);
-          if (message.enabled) disabled.delete(domain);
+          if (message.enabled) {
+            // A parent exception also pauses this hostname; remove every match.
+            for (const exception of disabled) {
+              if (hostnameMatches(domain, exception)) disabled.delete(exception);
+            }
+          }
           else disabled.add(domain);
           return { ...current, disabledSites: [...disabled] };
-        })
-      };
+        }));
     }
     case "stats:reset": {
-      const stats = { ...EMPTY_STATS, date: todayKey(), sites: {}, redirectSites: {} };
-      await chrome.storage.local.set({ stats });
-      return { stats };
+      const result = statisticsQueue.catch(() => {}).then(async () => {
+        const stats = { ...EMPTY_STATS, date: todayKey(), sites: {}, redirectSites: {} };
+        await chrome.storage.local.set({ stats });
+        return { stats };
+      });
+      statisticsQueue = result.catch(() => {});
+      return result;
     }
     case "reputation:reset": {
       await enqueueConfiguration(async () => {
@@ -781,6 +856,7 @@ chrome.runtime.onStartup.addListener(() => {
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status === "loading") {
     tabHiddenCounts.set(tabId, 0);
+    notifyPopupPageCount(tabId, 0);
     chrome.action.setBadgeText({ tabId, text: "" }).catch(() => {});
   }
   if (changeInfo.status === "complete") return removeRedirectAllowForTab(tabId).catch(() => {});

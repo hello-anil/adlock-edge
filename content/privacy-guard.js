@@ -1,11 +1,12 @@
 (function installAdLockPrivacyGuard() {
   "use strict";
 
-  const VERSION = "2.0.0";
+  const VERSION = "2.1.8";
   const CHANNEL_ATTRIBUTE = "data-aas-config-channel";
   const rootElement = document.documentElement;
-  let channel = rootElement?.getAttribute(CHANNEL_ATTRIBUTE) || "";
-  if (!channel && rootElement) {
+  // HTML attributes belong to the website. Never reuse a page-selected secret.
+  let channel = "";
+  if (rootElement) {
     const random = new Uint32Array(3);
     try {
       globalThis.crypto.getRandomValues(random);

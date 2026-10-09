@@ -28,6 +28,13 @@ const regexMatches = (rule, url) => new RegExp(
   rule.condition.regexFilter,
   rule.condition.isUrlFilterCaseSensitive === false ? "i" : ""
 ).test(url);
+const matchingDomainBlocks = (rules, url, resourceType, thirdParty = true) => {
+  const host = new URL(url).hostname;
+  return rules.filter(({ condition }) => condition.requestDomains
+    && condition.resourceTypes.includes(resourceType)
+    && (condition.domainType !== "thirdParty" || thirdParty)
+    && condition.requestDomains.some((domain) => host === domain || host.endsWith(`.${domain}`)));
+};
 
 test("generated filter artifacts are deterministic and current", () => {
   const result = spawnSync(process.execPath, ["scripts/generate-filter-data.mjs", "--check"], {
@@ -35,6 +42,68 @@ test("generated filter artifacts are deterministic and current", () => {
     encoding: "utf8"
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
+});
+
+test("reviewed news advertising and identity misses use their intended tiers", () => {
+  const adRequests = [
+    ["https://ad-delivery.net/px.gif", "image"],
+    ["https://prebid.the-ozone-project.com/hw2/OZONEBBC4784/current/ozpb.min.js", "script"],
+    ["https://elb.the-ozone-project.com/openrtb2/auction", "xmlhttprequest"]
+  ];
+  for (const [url, resourceType] of adRequests) {
+    assert.deepEqual(matchingDomainBlocks(generatedAlways, url, resourceType).map((rule) => rule.id), [5000]);
+  }
+
+  const trackerRequests = [
+    ["https://cdn.id5-sync.com/api/1.0/id5-api.js", "script"],
+    ["https://api.id5-sync.com/analytics/2010/id5-api-js", "xmlhttprequest"],
+    ["https://api.permutive.com/ctx/v1/segment", "xmlhttprequest"],
+    ["https://cdn.permutive.com/site-web.js", "script"],
+    ["https://api.permutive.app/v2.0/batch/events", "xmlhttprequest"],
+    ["https://8512b548-2306-4976-a576-a880f2c35e4e.edge.permutive.app/site-web.js", "script"],
+    ["https://pub.doubleverify.com/dvtag/signals/ids/pub.json", "script"],
+    ["https://events.hotjar.io/fakepage.html", "xmlhttprequest"],
+    ["https://cs.luckyorange.net/fakepage.html", "xmlhttprequest"],
+    ["https://upload.luckyorange.net/fakepage.html", "xmlhttprequest"],
+    ["https://settings.luckyorange.net/fakepage.html", "xmlhttprequest"]
+  ];
+  for (const [url, resourceType] of trackerRequests) {
+    assert.deepEqual(matchingDomainBlocks(generatedStrict, url, resourceType).map((rule) => rule.id), [6010]);
+    assert.deepEqual(matchingDomainBlocks(generatedAlways, url, resourceType), []);
+    assert.deepEqual(matchingDomainBlocks(generatedRedirects, url, "main_frame"), []);
+  }
+});
+
+test("reviewed host coverage preserves shared providers, authentication, payment, and domain boundaries", () => {
+  const rules = [...generatedAlways, ...generatedStrict];
+  const allowed = [
+    "https://cdn.amazonaws.com/media/article.jpg",
+    "https://bucket.s3.amazonaws.com/editorial/video.mp4",
+    "https://fonts.googleapis.com/css2?family=Roboto",
+    "https://accounts.google.com/gsi/client",
+    "https://js.stripe.com/dahlia/stripe.js",
+    "https://cdn.tinypass.com/api/tinypass.min.js",
+    "https://experience.piano.io/xbuilder/experience/load",
+    "https://permutive.com/help",
+    "https://docs.permutive.com/guide",
+    "https://doubleverify.com/resources",
+    "https://the-ozone-project.com/about",
+    "https://media.cnn.com/api/v1/images/stellar/prod/article.jpg",
+    "https://ichef.bbci.co.uk/news/640/cpsprodpb/article.jpg",
+    "https://cdn.id5-sync.com.example.org/api/1.0/id5-api.js",
+    "https://notluckyorange.net/site.js",
+    "https://api.permutive.com.example.org/ctx/v1/segment"
+  ];
+  for (const url of allowed) assert.deepEqual(matchingDomainBlocks(rules, url, "script"), [], url);
+  for (const addition of filterData.provenance.incrementalReview.additions) {
+    assert.ok(addition.sources.every((source) => source.startsWith("https://")));
+    for (const domain of addition.domains) {
+      const url = `https://${domain}/asset.js`;
+      assert.deepEqual(matchingDomainBlocks(rules, url, "script", false), [], `first-party ${domain}`);
+      assert.deepEqual(matchingDomainBlocks(rules, url, "main_frame"), [], `ordinary navigation ${domain}`);
+      assert.ok(filterData.categories[addition.category].domains.includes(domain));
+    }
+  }
 });
 
 test("canonical categories generate identical DNR and content-script domain sets", () => {

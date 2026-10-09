@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AdLock settings</title>
+  <link rel="stylesheet" href="fonts.css">
   <link rel="stylesheet" href="options.css">
 </head>
 <body>
@@ -60,7 +61,7 @@
             <input id="antiAdblockCompatibility" type="checkbox" class="toggle">
           </label>
           <label class="field-row">
-            <span><strong>Dynamic local filtering</strong><small>Learn repeatedly observed ad hosts locally; two unrelated sites must corroborate a host</small></span>
+            <span><strong>Learn ad hosts on this device</strong><small>Optional, Strict-only. Personalized blocking can make your browser more distinguishable. Incognito tabs never add learned evidence.</small></span>
             <input id="dynamicFiltering" type="checkbox" class="toggle">
           </label>
           <label class="field-row">
@@ -80,7 +81,7 @@
         <section id="exceptions" class="panel">
           <div class="section-heading">
             <div><span>02</span><h2>Site exceptions</h2></div>
-            <p>Protection is fully bypassed on these sites. Add one domain per line.</p>
+            <p>Protection is bypassed on these domains and their subdomains. Add one domain per line. Enabling a subdomain from the toolbar removes its matching parent exception too.</p>
           </div>
           <label class="stacked" for="disabledSites">
             <strong>Allowed sites</strong>
@@ -115,6 +116,19 @@
             <button id="resetStatsButton" type="button" class="danger">Reset statistics</button>
             <button id="resetReputationButton" type="button" class="danger">Reset learned hosts</button>
           </div>
+          <label class="stacked" for="importFile">
+            <strong>Restore a settings backup</strong>
+            <small>Choose an AdLock JSON export (up to 256 KB), review it, then save to apply.</small>
+            <input id="importFile" type="file" accept=".json,application/json">
+          </label>
+          <div class="data-actions">
+            <button id="diagnosticsButton" type="button" class="secondary">Prepare support diagnostics</button>
+          </div>
+          <label class="stacked" for="diagnosticsOutput">
+            <strong>Support diagnostics</strong>
+            <small>Review and copy this report when asking for help. It excludes URLs, domain names, page content and browsing counts. Add browser version and reproduction steps yourself.</small>
+            <textarea id="diagnosticsOutput" rows="6" readonly spellcheck="false" placeholder="Your report will appear here."></textarea>
+          </label>
         </section>
 
         <div class="form-actions">
@@ -123,6 +137,7 @@
       </form>
     </main>
   </div>
+  <script src="settings-transfer.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

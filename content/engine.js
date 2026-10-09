@@ -12,7 +12,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function createEngine(domainData) {
   "use strict";
 
-  const VERSION = "2.0.0";
+  const VERSION = "2.1.8";
 
   const LEVEL_THRESHOLDS = Object.freeze({
     relaxed: 9,
@@ -37,9 +37,12 @@
   );
   const KNOWN_AD_HOSTS = frozenDomains("advertisingDomains", FALLBACK_AD_HOSTS);
   const ALWAYS_ON_HOSTS = frozenDomains("alwaysOnDomains", KNOWN_AD_HOSTS);
+  const AD_HOST_SET = new Set(KNOWN_AD_HOSTS);
+  const ALWAYS_ON_HOST_SET = new Set(ALWAYS_ON_HOSTS);
 
   const CANDIDATE_SELECTOR = [
     "ins.adsbygoogle",
+    "iframe[src]",
     "iframe[src*='doubleclick.net']",
     "iframe[src*='googlesyndication.com']",
     "iframe[src*='/pagead/']",
@@ -47,12 +50,15 @@
     "[data-ad]",
     "[data-ad-slot]",
     "[data-ad-unit]",
+    "[data-ad-type]",
+    "[data-ad-format]",
     "[data-advertisement]",
     "[data-sponsored]",
     "[data-promoted]",
     "[data-social-promo]",
     "[aria-label*='advertisement' i]",
     "[aria-label*='sponsored' i]",
+    "[aria-label*='promoted' i]",
     "[id^='google_ads_']",
     "[class~='ad']",
     "[class~='ads']",
@@ -90,8 +96,10 @@
 
   const EXPLICIT_ATTRIBUTE_RE = /(?:^|[\s_-])(ads?|advert(?:isement|ising)?|sponsored|promoted|paid-content)(?:[\s_-]|$)/i;
   const STRONG_ATTRIBUTE_RE = /(?:adsbygoogle|google_ads|ad[-_](?:container|wrapper|slot|unit|banner)|sponsor(?:ed)?[-_](?:content|post)|promoted[-_](?:content|post))/i;
+  const PROMOTION_FLAG_ATTRIBUTES = Object.freeze(["data-sponsored", "data-promoted", "data-social-promo"]);
+  const NEGATED_PROMOTION_FLAG_RE = /^(?:false|0)$/i;
   const FALSE_ATTRIBUTE_RE = /(?:shadow|address|download|adapter|admin|badge|header|breadcrumb|thread|read-more)/i;
-  const MARKER_RE = /^(?:ad|ads|advert|advertisement|advertising|paid content|promoted|sponsored)(?:\s*[·•|:-].*)?$/i;
+  const MARKER_RE = /^(?:ad|ads|advert|advertisement|advertising|paid content|promoted|sponsored)(?:\s*[·•|:].*|\s+-\s+.*)?$/i;
   const URL_AD_HINT_RE = /(?:[/?&_.-](?:adserver|adservice|ads?|advert|banner|campaign|creative|sponsor)(?:[/?&=_.-]|$)|[?&](?:ad_id|adid|campaign_id|creative_id)=)/i;
   const REDIRECT_PATH_RE = /(?:^|\/)(?:click|go|out|redirect|redir|track)(?:\/|$)/i;
   const REDIRECT_KEYS = new Set(["adurl", "dest", "destination", "redirect", "redirect_url", "target", "to", "url"]);
@@ -103,7 +111,10 @@
     [300, 250], [336, 280], [728, 90], [970, 90], [970, 250],
     [320, 50], [320, 100], [468, 60], [160, 600], [300, 600]
   ]);
-  const ANTI_ADBLOCK_TEXT_RE = /(?:\bad\s*block(?:er|ing)?\b|\badblock\b|disable.{0,60}(?:ad\s*block|adblocker)|whitelist.{0,60}(?:site|domain)|ads?\s+(?:are|is|were|must be)\s+blocked)/i;
+  const ANTI_ADBLOCK_TEXT_RE = /(?:\bad[ -]?block(?:er|ing)?\b|\bads?\s+(?:are|is|were|must be)\s+blocked|\bdns\s+blocking\b)/i;
+  const ANTI_ADBLOCK_DIRECTIVE_RE = /(?:\b(?:disable|deactivate|pause|remove|turn\s+off)\b.{0,60}\b(?:ad[ -]?block(?:er|ing)?|blocking)\b|\b(?:ad[ -]?block(?:er|ing)?|blocking)\b.{0,80}\b(?:disable|deactivate|turn\s+off)\b|\bwhitelist\b.{0,40}\b(?:site|domain|us)\b|\b(?:allow|enable)\s+ads?\b)/i;
+  const ANTI_ADBLOCK_ACCESS_RE = /(?:\b(?:disable|whitelist|allow|enable)\b.{0,60}\b(?:to\s+(?:continue|proceed|access|watch)|before\s+(?:continuing|proceeding))\b|\b(?:cannot|can't|unable\s+to)\s+(?:continue|proceed|access|watch)\b|\b(?:access|content|video|playback)\s+(?:is\s+)?(?:blocked|unavailable)\b|\b(?:ad[ -]?block(?:er|ing)?)\b.{0,80}\b(?:prevent(?:s|ing)|block(?:s|ing))\b.{0,40}\b(?:access|watching|viewing|playback)\b)/i;
+  const HOSTNAME_TEXT_RE = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\.?$/i;
   const SECURITY_CHALLENGE_RE = /\b(?:cloudflare|turnstile|captcha|security verification|verify (?:that )?you are (?:a )?human|bot verification|sign[ -]?in|log[ -]?in|subscription|subscribe|paywall)\b/i;
   const ADBLOCK_BAIT_RE = /(?:^|[\s_-])(?:adsbox|ad[-_]?bait|ad[-_]?test(?:er)?|banner[-_]?ad|pub[-_]?\d{2,4}x\d{2,4})(?:[\s_-]|$)/i;
   const AD_SURFACE_RE = /(?:^|[\s_-])(?:(?:ad|advert(?:isement|ising)?|sponsor(?:ed)?|promo(?:ted|tion)?)[-_]?(?:overlay|interstitial|modal|popup|popunder|wall|skin|backdrop)|(?:overlay|interstitial|modal|popup|popunder|wall|skin|backdrop)[-_]?(?:ad|advert(?:isement|ising)?|sponsor(?:ed)?|promo(?:ted|tion)?))(?:[\s_-]|$)/i;
@@ -126,16 +137,40 @@
     return String(value || "").replace(/\s+/g, " ").trim();
   }
 
+  // Limit both characters and visited nodes: textContent on a feed ancestor
+  // otherwise copies the entire subtree before a caller can truncate it.
+  function readText(element, limit = 4096) {
+    if (!element) return "";
+    const document = element.ownerDocument;
+    if (typeof document?.createTreeWalker !== "function") {
+      return String(element.textContent || "").slice(0, limit + 1);
+    }
+    const walker = document.createTreeWalker(element, 5); // SHOW_ELEMENT | SHOW_TEXT
+    let text = "";
+    let visited = 0;
+    let node;
+    while ((node = walker.nextNode())) {
+      if (++visited > 256) return text.padEnd(limit + 1, "\ufffc");
+      if (node.nodeType === 3) {
+        text += String(node.nodeValue || "").slice(0, limit + 1 - text.length);
+        if (text.length > limit) return text;
+      }
+    }
+    return text;
+  }
+
   function isAntiAdblockMessage(value) {
     const text = normalizeText(value);
-    return text.length >= 12 && text.length <= 2400 && ANTI_ADBLOCK_TEXT_RE.test(text) && !SECURITY_CHALLENGE_RE.test(text);
+    return text.length >= 12 && text.length <= 2400 && ANTI_ADBLOCK_TEXT_RE.test(text) &&
+      (ANTI_ADBLOCK_DIRECTIVE_RE.test(text) || ANTI_ADBLOCK_ACCESS_RE.test(text)) && !SECURITY_CHALLENGE_RE.test(text);
   }
 
   function isLikelyAdblockBait(element) {
     if (!element || element.nodeType !== 1) return false;
     const corpus = getAttributeCorpus(element);
-    const text = normalizeText(element.textContent || "");
-    if (!ADBLOCK_BAIT_RE.test(corpus) || text.length > 80) return false;
+    if (!ADBLOCK_BAIT_RE.test(corpus)) return false;
+    const text = normalizeText(readText(element));
+    if (text.length > 80) return false;
     if (element.querySelector?.("a[href],button,input,video,audio")) return false;
     const rect = typeof element.getBoundingClientRect === "function" ? element.getBoundingClientRect() : null;
     const tiny = !rect || rect.width <= 12 || rect.height <= 12;
@@ -155,11 +190,21 @@
     try {
       const base = typeof location !== "undefined" ? location.href : "https://example.invalid/";
       const host = new URL(String(value), base).hostname;
-      return KNOWN_AD_HOSTS.some((domain) => hostnameMatches(host, domain));
+      return matchesHostSet(host, AD_HOST_SET);
     } catch (_error) {
-      const lowered = String(value).toLowerCase();
-      return KNOWN_AD_HOSTS.some((domain) => lowered.includes(domain));
+      return false;
     }
+  }
+
+  function matchesHostSet(hostname, hosts) {
+    let host = String(hostname || "").toLowerCase().replace(/\.$/, "");
+    while (host) {
+      if (hosts.has(host)) return true;
+      const dot = host.indexOf(".");
+      if (dot < 0) break;
+      host = host.slice(dot + 1);
+    }
+    return false;
   }
 
   function getAttributeCorpus(element) {
@@ -173,19 +218,147 @@
     return normalizeText(names.map((name) => element.getAttribute(name) || "").join(" "));
   }
 
-  function ownText(element) {
+  function ownText(element, sampledText) {
     if (!element) return "";
     let text = "";
     const nodes = element.childNodes || [];
-    for (const node of nodes) {
-      if (node && node.nodeType === 3) text += ` ${node.nodeValue || ""}`;
+    for (let index = 0; index < Math.min(nodes.length, 256); index += 1) {
+      const node = nodes[index];
+      if (node && node.nodeType === 3) text += ` ${String(node.nodeValue || "").slice(0, 4097 - text.length)}`;
+      if (text.length > 4096) break;
     }
-    return normalizeText(text || element.textContent || "");
+    return normalizeText(text || (sampledText === undefined ? readText(element) : sampledText));
   }
 
-  function hasMarkerText(element) {
-    const text = ownText(element);
+  function hasMarkerText(element, sampledText) {
+    const text = ownText(element, sampledText);
     return text.length > 0 && text.length <= 80 && MARKER_RE.test(text);
+  }
+
+  function hasExplicitAdAttribute(element) {
+    return [
+      "data-ad", "data-ad-slot", "data-ad-unit", "data-advertisement", "data-companion-ad", "data-ad-background",
+      "data-ad-type", "data-ad-format"
+    ].some((name) => element?.hasAttribute?.(name)) ||
+      PROMOTION_FLAG_ATTRIBUTES.some((name) => {
+        const value = element?.getAttribute?.(name);
+        // Presence-style flags remain supported, but an explicit false value
+        // on an ordinary feed card is not advertising evidence.
+        return value != null && !NEGATED_PROMOTION_FLAG_RE.test(String(value).trim());
+      });
+  }
+
+  function hasHighConfidenceAdEvidence(element, allowDisclosureAria = false) {
+    const corpus = getAttributeCorpus(element);
+    const aria = normalizeText(element?.getAttribute?.("aria-label"));
+    return hasExplicitAdAttribute(element) || STRONG_ATTRIBUTE_RE.test(corpus) ||
+      AD_SURFACE_RE.test(corpus) || FLOATING_PROMO_RE.test(corpus) || SOCIAL_PROMO_RE.test(corpus) ||
+      COMPANION_AD_RE.test(corpus) || BACKGROUND_SKIN_RE.test(corpus) ||
+      (/\b(?:advertisement|sponsored|promoted)\b/i.test(aria) && !(allowDisclosureAria && MARKER_RE.test(aria))) ||
+      elementUrls(element).some(isKnownAdUrl) ||
+      (tagNameOf(element) === "a" && /(?:^|\s)sponsored(?:\s|$)/i.test(element.getAttribute("rel") || ""));
+  }
+
+  function isEditorialMarkerLink(element, markerText) {
+    if (tagNameOf(element) !== "a" || hasHighConfidenceAdEvidence(element, true)) return false;
+    const href = element.getAttribute("href");
+    return Boolean(href && parseHttpUrl(href) &&
+      normalizeText(readText(element)) === markerText && !hasHighConfidenceAdEvidence(element.parentElement));
+  }
+
+  // A disclosure-shaped word inside a reference link belongs to that link.
+  // Its inline children and otherwise empty wrappers must not independently
+  // turn the same word back into an advertisement.
+  function hasEditorialMarkerContext(element, markerText) {
+    if (hasEditorialFormattingContext(element, markerText)) return true;
+    let current = element;
+    for (let depth = 0; current && depth < 5; depth += 1, current = current.parentElement) {
+      if (tagNameOf(current) === "a") return isEditorialMarkerLink(current, markerText);
+      if (hasHighConfidenceAdEvidence(current) || normalizeText(readText(current)) !== markerText) break;
+    }
+    current = element;
+    for (let depth = 0; current && depth < 5; depth += 1) {
+      if (tagNameOf(current) === "a") return isEditorialMarkerLink(current, markerText);
+      if (hasHighConfidenceAdEvidence(current) || current.children?.length !== 1 ||
+          normalizeText(readText(current)) !== markerText) return false;
+      current = current.children[0];
+    }
+    return false;
+  }
+
+  function hasEditorialFormattingContext(element, markerText) {
+    let formatted = false;
+    let current = element;
+    // A title wrapper can own only the formatted word, with no direct text.
+    for (let depth = 0; current && depth < 5; depth += 1) {
+      if (/^(?:b|strong|i|em|cite|h[1-6])$/.test(tagNameOf(current))) {
+        formatted = true;
+        break;
+      }
+      if (current.children?.length !== 1 || normalizeText(readText(current)) !== markerText) break;
+      current = current.children[0];
+    }
+    current = element;
+    for (let depth = 0; current && depth < 8; depth += 1, current = current.parentElement) {
+      const tag = tagNameOf(current);
+      if (["body", "html", "main"].includes(tag)) break;
+      const corpus = getAttributeCorpus(current);
+      if (hasHighConfidenceAdEvidence(current) ||
+          (current !== element && EXPLICIT_ATTRIBUTE_RE.test(corpus) && !FALSE_ATTRIBUTE_RE.test(corpus)) ||
+          /(?:^|[\s_-])(?:feed|(?:article|product|story)[-_]?card)(?:[\s_-]|$)/i.test(corpus)) return false;
+      if (/^(?:b|strong|i|em|cite|h[1-6])$/.test(tag)) formatted = true;
+      if (isNavigationContainer(current)) formatted = true;
+    }
+    return formatted;
+  }
+
+  function isNavigationContainer(element) {
+    return ["header", "nav"].includes(tagNameOf(element)) ||
+      ["banner", "navigation", "search"].includes(element?.getAttribute?.("role")) ||
+      /(?:^|[\s_-])(?:header|navbar|navigation)(?:[\s_-]|$)/i.test(getAttributeCorpus(element));
+  }
+
+  // A list describing hosts is content, while actual resource destinations and
+  // ad metadata remain advertising evidence. Inspect text nodes separately so
+  // adjacent labels do not need spaces inserted by the page's markup.
+  function isInformationalHostList(element) {
+    const pending = [element];
+    let hosts = 0;
+    let visited = 0;
+    let textNodes = 0;
+    while (pending.length) {
+      if (++visited > 256) return false;
+      const current = pending.pop();
+      if (!current || current.nodeType !== 1) continue;
+      if (hasHighConfidenceAdEvidence(current)) return false;
+      if ((current.childNodes?.length || 0) > 256) return false;
+      for (const node of current.childNodes || []) {
+        if (node.nodeType !== 3) continue;
+        const value = String(node.nodeValue || "");
+        if (value.length > 253) continue;
+        const label = normalizeText(value);
+        // Formatting whitespace around SVG status icons is not another label.
+        // Element and child-list limits still bound the traversal independently.
+        if (!label) continue;
+        if (++textNodes > 256) return false;
+        if (HOSTNAME_TEXT_RE.test(label)) hosts += 1;
+      }
+      if (pending.length + (current.children?.length || 0) + visited > 256) return false;
+      for (const child of current.children || []) pending.push(child);
+    }
+    return hosts >= 2;
+  }
+
+  function hasInformationalHostContext(element) {
+    let current = element;
+    for (let depth = 0; current && depth < 5; depth += 1, current = current.parentElement) {
+      if (hasHighConfidenceAdEvidence(current)) return false;
+      if (["body", "html", "main"].includes(tagNameOf(current))) return false;
+      const corpus = getAttributeCorpus(current);
+      const weakIdentifier = EXPLICIT_ATTRIBUTE_RE.test(corpus) && !FALSE_ATTRIBUTE_RE.test(corpus);
+      if ((current === element || weakIdentifier) && isInformationalHostList(current)) return true;
+    }
+    return false;
   }
 
   function elementUrls(element) {
@@ -214,9 +387,9 @@
     return Boolean(rect && rect.width > 0 && rect.height > 0 && rect.width <= 4 && rect.height <= 4);
   }
 
-  function isProtectedUiElement(element) {
-    const corpus = getAttributeCorpus(element);
-    const text = normalizeText(element && element.textContent || "");
+  function isProtectedUiElement(element, sampledText, sampledCorpus) {
+    const corpus = sampledCorpus === undefined ? getAttributeCorpus(element) : sampledCorpus;
+    const text = sampledText === undefined ? normalizeText(readText(element)) : sampledText;
     return PROTECTED_UI_ATTRIBUTE_RE.test(corpus) || PROTECTED_UI_TEXT_RE.test(text);
   }
 
@@ -242,14 +415,25 @@
     const signals = [];
     const tag = tagNameOf(element);
     const corpus = getAttributeCorpus(element);
-    const text = ownText(element);
-    const fullText = normalizeText(element.textContent || "");
+    const fullText = normalizeText(readText(element));
+    const text = ownText(element, fullText);
     const urls = elementUrls(element);
     const inlineStyle = normalizeText(element.getAttribute && element.getAttribute("style"));
-    const explicitAdAttribute = [
-      "data-ad", "data-ad-slot", "data-ad-unit", "data-advertisement", "data-companion-ad", "data-ad-background",
-      "data-sponsored", "data-promoted", "data-social-promo"
-    ].some((name) => element.hasAttribute && element.hasAttribute(name));
+    const explicitAdAttribute = hasExplicitAdAttribute(element);
+    const aria = normalizeText(element.getAttribute && element.getAttribute("aria-label"));
+    const adAccessibility = /\b(?:advertisement|sponsored|promoted)\b/i.test(aria);
+    const marker = text.length > 0 && text.length <= 80 && MARKER_RE.test(text);
+    const knownAdUrl = urls.some(isKnownAdUrl);
+    const strongIdentifier = STRONG_ATTRIBUTE_RE.test(corpus);
+    const parent = element.parentElement;
+    const parentCorpus = marker ? getAttributeCorpus(parent) : "";
+    const sponsoredRelation = tag === "a" && /(?:^|\s)sponsored(?:\s|$)/i.test(String(element.getAttribute("rel") || ""));
+    const editorialLink = marker && fullText === text && !explicitAdAttribute && !strongIdentifier && !knownAdUrl &&
+      hasEditorialMarkerContext(element, text);
+    const weakAdIdentifier = EXPLICIT_ATTRIBUTE_RE.test(corpus) && !FALSE_ATTRIBUTE_RE.test(corpus);
+    const informationalHostText = !explicitAdAttribute && !strongIdentifier && !knownAdUrl && !adAccessibility &&
+      (HOSTNAME_TEXT_RE.test(fullText) || (weakAdIdentifier && isInformationalHostList(element)) ||
+        (marker && hasInformationalHostContext(element)));
 
     const add = (points, signal) => {
       score += points;
@@ -261,11 +445,12 @@
       add(9, "explicit ad data attribute");
     }
 
-    const aria = normalizeText(element.getAttribute && element.getAttribute("aria-label"));
-    if (aria && /\b(?:advertisement|sponsored|promoted)\b/i.test(aria)) add(7, "ad accessibility label");
+    if (adAccessibility &&
+        !(editorialLink && MARKER_RE.test(aria))) add(7, "ad accessibility label");
+    if (sponsoredRelation) add(7, "sponsored link relation");
 
-    if (STRONG_ATTRIBUTE_RE.test(corpus)) add(6, "strong ad identifier");
-    else if (EXPLICIT_ATTRIBUTE_RE.test(corpus) && !FALSE_ATTRIBUTE_RE.test(corpus)) add(4, "ad-like identifier");
+    if (strongIdentifier) add(6, "strong ad identifier");
+    else if (weakAdIdentifier && !editorialLink && !informationalHostText) add(4, "ad-like identifier");
 
     const adSurface = AD_SURFACE_RE.test(corpus);
     const floatingPromo = FLOATING_PROMO_RE.test(corpus);
@@ -279,12 +464,12 @@
       add(2, "floating overlay presentation");
     }
 
-    if (hasMarkerText(element)) add(5, `disclosure label: ${text.slice(0, 40)}`);
+    if (marker && !editorialLink && !informationalHostText) add(5, `disclosure label: ${text.slice(0, 40)}`);
 
-    if (urls.some(isKnownAdUrl)) add(8, "known ad-network URL");
+    if (knownAdUrl) add(8, "known ad-network URL");
     else if (urls.some((url) => URL_AD_HINT_RE.test(String(url)))) add(3, "ad-like resource URL");
 
-    if (hasTinyResourceBox(element) && urls.some((url) => isKnownAdUrl(url) || TRACKING_URL_HINT_RE.test(String(url)))) {
+    if (urls.some((url) => isKnownAdUrl(url) || TRACKING_URL_HINT_RE.test(String(url))) && hasTinyResourceBox(element)) {
       add(9, "tracking pixel or beacon");
     }
 
@@ -305,11 +490,11 @@
       add(4, "advertising iframe");
     }
 
-    if (hasAdSizedBox(element)) add(1, "common ad dimensions");
+    // Dimensions are only supporting evidence. Once semantic evidence already
+    // clears every mode, avoid forcing layout between successive hide writes.
+    if (!editorialLink && score < LEVEL_THRESHOLDS.relaxed && hasAdSizedBox(element)) add(1, "common ad dimensions");
 
-    const parent = element.parentElement;
-    const parentCorpus = getAttributeCorpus(parent);
-    if (hasMarkerText(element) && CARD_HINT_RE.test(parentCorpus)) add(2, "disclosure inside feed card");
+    if (marker && !editorialLink && !informationalHostText && CARD_HINT_RE.test(parentCorpus)) add(2, "disclosure inside feed card");
 
     if (fullText.length > 700 && score < 8) add(-4, "long editorial content");
 
@@ -317,7 +502,7 @@
       add(-3, "navigation context");
     }
 
-    if (isProtectedUiElement(element) && !explicitAdAttribute && !urls.some(isKnownAdUrl)) {
+    if (isProtectedUiElement(element, fullText, corpus) && !explicitAdAttribute && !knownAdUrl) {
       add(-Math.max(12, score), "authentication or security interface");
     }
 
@@ -343,8 +528,10 @@
     for (let depth = 0; current && depth <= 7; depth += 1) {
       const currentTag = tagNameOf(current);
       if (["body", "html", "main"].includes(currentTag)) break;
+      // A descendant disclosure must not promote the whole navigation bar.
+      if (isNavigationContainer(current) && !hasHighConfidenceAdEvidence(current)) break;
 
-      const textLength = normalizeText(current.textContent || "").length;
+      const textLength = normalizeText(readText(current)).length;
       const ownResult = scoreCandidate(current);
       const hasStrongOwnSignal = ownResult.signals.some((item) => item.points >= 6);
       if (hasStrongOwnSignal && textLength < 2400) return current;
@@ -442,8 +629,9 @@
 
     const currentHostname = String(options.currentHostname || parseHttpUrl(baseUrl)?.hostname || "").toLowerCase();
     const customDomains = Array.isArray(options.customBlockDomains) ? options.customBlockDomains : [];
-    const blockedDomains = [...ALWAYS_ON_HOSTS, ...customDomains];
-    const targetIsBlocked = blockedDomains.some((domain) => hostnameMatches(parsed.hostname, domain));
+    const isBlockedHost = (host) => matchesHostSet(host, ALWAYS_ON_HOST_SET) ||
+      customDomains.some((domain) => hostnameMatches(host, domain));
+    const targetIsBlocked = isBlockedHost(parsed.hostname);
     const sameSite = hostnameMatches(parsed.hostname, currentHostname) || hostnameMatches(currentHostname, parsed.hostname);
     const rel = String(options.rel || "");
     const target = String(options.target || "");
@@ -489,7 +677,7 @@
       if (nestedIsExternal && !nestedIsProtected && hasStrongAffiliateSignal(item.url)) {
         nestedAffiliateDestination = true;
       }
-      if (blockedDomains.some((domain) => hostnameMatches(item.url.hostname, domain))) {
+      if (isBlockedHost(item.url.hostname)) {
         nestedAdvertisingDestination = true;
       }
     }
@@ -520,6 +708,7 @@
     CANDIDATE_SELECTOR,
     MARKER_RE,
     normalizeText,
+    readText,
     hostnameMatches,
     isKnownAdUrl,
     hasMarkerText,

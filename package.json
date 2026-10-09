@@ -1,22 +1,30 @@
 {
   "name": "adlock",
-  "version": "2.0.0",
+  "version": "2.1.8",
   "private": true,
   "description": "A local-first Manifest V3 algorithmic ad blocker.",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test tests/engine.test.mjs tests/navigation-guard.test.mjs tests/privacy-guard.test.mjs tests/rules.test.mjs tests/runtime-bridge.test.mjs tests/service-worker.test.mjs && node scripts/validate.mjs",
+    "test": "node --test tests/popup.test.mjs tests/content.test.mjs tests/engine.test.mjs tests/navigation-guard.test.mjs tests/privacy-guard.test.mjs tests/rules.test.mjs tests/runtime-bridge.test.mjs tests/service-worker.test.mjs tests/settings-transfer.test.mjs && node scripts/validate.mjs",
     "validate": "node scripts/validate.mjs",
     "benchmark": "node scripts/benchmark.mjs",
     "benchmark:assert": "node scripts/benchmark.mjs --assert",
+    "benchmark:live": "node scripts/benchmark-live.mjs",
+    "classification:verify": "node scripts/verify-classification.mjs",
+    "critical:verify": "node scripts/verify-critical-fixes.mjs",
     "release": "npm test && npm run benchmark:assert && node scripts/package-release.mjs",
     "release:package": "node scripts/package-release.mjs",
-    "release:check": "node scripts/package-release.mjs --check"
+    "release:verify": "node scripts/verify-release.mjs",
+    "popup:verify": "node scripts/verify-popup-stability.mjs",
+    "release:check": "node scripts/package-release.mjs --check",
+    "popup:functionality:verify": "node scripts/verify-popup-functionality.mjs",
+    "popup:preview:verify": "node scripts/verify-popup-preview.mjs"
   },
   "license": "MIT",
   "devDependencies": {
+    "@playwright/cli": "0.1.22",
     "@playwright/test": "^1.61.1",
     "@types/node": "^26.1.1"
   }

@@ -46,7 +46,7 @@ function parseDomains(value, label) {
 }
 
 function parseSelectors(value) {
-  const selectors = lines(value);
+  const selectors = AdLockSettingsTransfer.selectorLines(value);
   const fragment = document.createDocumentFragment();
   for (const selector of selectors) {
     try {
@@ -72,7 +72,7 @@ function populate(settings) {
   fields.showPlaceholders.checked = settings.showPlaceholders;
   fields.redirectProtection.checked = settings.redirectProtection;
   fields.antiAdblockCompatibility.checked = settings.antiAdblockCompatibility !== false;
-  fields.dynamicFiltering.checked = settings.dynamicFiltering !== false;
+  fields.dynamicFiltering.checked = settings.dynamicFiltering === true;
   fields.cleanTrackingParameters.checked = settings.cleanTrackingParameters !== false;
   fields.privacyApiProtection.checked = settings.privacyApiProtection !== false;
   fields.fingerprintProtection.checked = settings.fingerprintProtection !== false;
@@ -158,6 +158,48 @@ document.getElementById("exportButton").addEventListener("click", () => {
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   setStatus("Settings exported");
+});
+
+document.getElementById("importFile").addEventListener("change", async (event) => {
+  const file = event.target.files?.[0];
+  if (!file || !initialized || saving) return;
+  try {
+    if (file.size > AdLockSettingsTransfer.MAX_IMPORT_BYTES) throw new Error("Settings file must be smaller than 256 KB");
+    const fragment = document.createDocumentFragment();
+    const patch = AdLockSettingsTransfer.parseBackup(await file.text(), (selector) => fragment.querySelector(selector));
+    populate({ ...currentSettings, ...patch });
+    form.classList.add("is-dirty");
+    saveButton.textContent = "Save imported settings";
+    saveButton.disabled = false;
+    setStatus("Backup loaded for review. Save changes to apply it.");
+  } catch (error) {
+    setStatus(error.message, true);
+  } finally {
+    event.target.value = "";
+  }
+});
+
+document.getElementById("diagnosticsButton").addEventListener("click", async () => {
+  try {
+    const snapshot = await send({ type: "popup:getState" });
+    const report = {
+      formatVersion: 1,
+      extensionVersion: chrome.runtime.getManifest().version,
+      protectionLevel: snapshot.settings.level,
+      globalEnabled: snapshot.settings.globalEnabled,
+      localLearningEnabled: snapshot.settings.dynamicFiltering,
+      networkHealth: snapshot.networkHealth || { status: "unavailable" },
+      counts: {
+        siteExceptions: snapshot.settings.disabledSites.length,
+        customDomains: snapshot.settings.customBlockDomains.length,
+        customSelectors: snapshot.settings.customSelectors.length
+      }
+    };
+    document.getElementById("diagnosticsOutput").value = JSON.stringify(report, null, 2);
+    setStatus("Diagnostics ready to review and copy. Nothing was sent.");
+  } catch (error) {
+    setStatus(error.message, true);
+  }
 });
 
 initialize().catch((error) => setStatus(error.message, true));

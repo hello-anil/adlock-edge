@@ -1,0 +1,12 @@
+@font-face {
+  font-family: "Bangers";
+  src: url("fonts/bangers/Bangers-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+:root {
+  --adlock-font: "Bangers", "Segoe UI", system-ui, sans-serif;
+  font-synthesis: none;
+}

@@ -43,7 +43,8 @@ function createChromeMock({
     cssInsertions: [],
     cssRemovals: [],
     scriptExecutions: [],
-    sentMessages: []
+    sentMessages: [],
+    runtimeMessages: []
   };
   const failingScriptTabs = new Set(failScriptTabIds);
 
@@ -56,6 +57,7 @@ function createChromeMock({
   const runtimeOnMessage = new ChromeEvent();
   const chrome = {
     runtime: {
+      async sendMessage(message) { calls.runtimeMessages.push(structuredClone(message)); },
       onMessage: runtimeOnMessage,
       onInstalled: new ChromeEvent(),
       onStartup: new ChromeEvent()
@@ -193,9 +195,43 @@ async function loadWorker(options) {
   return mock;
 }
 
+test("enabling a subdomain removes matching parent exceptions and keeps unrelated pauses", async () => {
+  const mock = await loadWorker({ initialData: { settings: {
+    disabledSites: ["example.org", "news.example.org", "other.example"]
+  } } });
+  const result = await mock.message({ type: "site:setEnabled", hostname: "news.example.org", enabled: true });
+  assert.deepEqual(Array.from(result.settings.disabledSites), ["other.example"]);
+  const rules = mock.getDynamicRules().filter((rule) => rule.id === 100000);
+  assert.deepEqual(Array.from(rules[0].condition.requestDomains), ["other.example"]);
+});
+
+test("statistics reset serializes between pending and subsequent counts", async () => {
+  const mock = await loadWorker();
+  const sender = { tab: { id: 0 } };
+  await Promise.all([
+    mock.message({ type: "content:blocked", count: 7 }, sender),
+    mock.message({ type: "stats:reset" }),
+    mock.message({ type: "content:blocked", count: 2 }, sender)
+  ]);
+  const result = await mock.message({ type: "popup:getState", tabId: 0 });
+  assert.equal(result.stats.totalHidden, 2);
+  assert.equal(result.stats.todayHidden, 2);
+  assert.equal(result.pageHidden, 9);
+});
+
+test("paused sites cannot contribute learned blocking evidence", async () => {
+  const mock = await loadWorker({ initialData: { settings: { dynamicFiltering: true, disabledSites: ["example.org"] } } });
+  const response = await mock.message({
+    type: "content:reputationSignal", targetHostname: "ad-host.example", evidence: "classified-ad"
+  }, { tab: { id: 1, url: "https://news.example.org/story" } });
+  assert.equal(response.accepted, false);
+  assert.equal(mock.data.dynamicReputation?.entries?.["ad-host.example"], undefined);
+});
+
 test("install initializes normalized local settings and statistics", async () => {
   const mock = await loadWorker();
   assert.equal(mock.data.settings.globalEnabled, true);
+  assert.equal(mock.data.settings.dynamicFiltering, false);
   assert.equal(mock.data.settings.level, "strict");
   assert.deepEqual(Array.from(mock.data.settings.disabledSites), []);
   assert.equal(mock.data.stats.totalHidden, 0);
@@ -209,6 +245,47 @@ test("install initializes normalized local settings and statistics", async () =>
     "privacy_strict",
     "redirect_ads"
   ]);
+});
+
+test("network health detects missing static and mismatched dynamic rules and recovers", async () => {
+  const mock = await loadWorker();
+  assert.equal((await mock.message({ type: "popup:getState" })).networkHealth.status, "active");
+  mock.enabledRulesets.delete("core_ads");
+  assert.equal((await mock.message({ type: "popup:getState" })).networkHealth.status, "degraded");
+  await mock.message({ type: "settings:update", patch: { customBlockDomains: ["ad.example"] } });
+  mock.getDynamicRules().find((rule) => rule.id === 200000).action.type = "allow";
+  assert.equal((await mock.message({ type: "popup:getState" })).networkHealth.status, "degraded");
+  const recovered = await mock.message({ type: "settings:update", patch: { globalEnabled: false } });
+  assert.equal(recovered.networkHealth.status, "paused");
+  mock.chrome.declarativeNetRequest.getEnabledRulesets = async () => { throw new Error("Unavailable"); };
+  assert.equal((await mock.message({ type: "popup:getState" })).networkHealth.status, "unavailable");
+});
+
+test("switching away from Strict removes learned rules and restores them only when Strict returns", async () => {
+  const mock = await loadWorker({ initialData: { settings: { dynamicFiltering: true }, dynamicReputation: {
+    version: 1, entries: { "learned.example": { score: 8, sources: ["a", "b"],
+      evidenceKeys: ["a:classified-ad", "b:classified-ad"], lastSeen: Date.now() } }
+  } } });
+  assert.equal(mock.getDynamicRules().some((rule) => rule.id === 300000), true);
+  for (const level of ["balanced", "relaxed"]) {
+    const response = await mock.message({ type: "settings:update", patch: { level } });
+    assert.equal(response.networkHealth.status, "active");
+    assert.equal(mock.getDynamicRules().some((rule) => rule.id === 300000), false);
+    assert.ok(mock.data.dynamicReputation.entries["learned.example"]);
+  }
+  await mock.message({ type: "settings:update", patch: { level: "strict" } });
+  assert.equal(mock.getDynamicRules().some((rule) => rule.id === 300000), true);
+});
+
+test("local learning is opt-in and incognito evidence never persists even after opting in", async () => {
+  const mock = await loadWorker();
+  const signal = { type: "content:reputationSignal", targetHostname: "unknown-ad.example", evidence: "classified-ad" };
+  const sender = { tab: { id: 2, url: "https://publisher.example/" } };
+  assert.equal((await mock.message(signal, sender)).accepted, false);
+  await mock.message({ type: "settings:update", patch: { dynamicFiltering: true } });
+  assert.equal((await mock.message(signal, { tab: { ...sender.tab, incognito: true } })).accepted, false);
+  assert.equal(mock.data.dynamicReputation?.entries?.["unknown-ad.example"], undefined);
+  assert.equal((await mock.message(signal, sender)).accepted, true);
 });
 
 test("startup preserves an explicitly stored balanced level and disables strict and redirect-generated rules", async () => {
@@ -265,6 +342,33 @@ test("install reinjects user-origin CSS and both script worlds into existing web
   ]);
   assert.equal(mainWorldCalls[0].injectImmediately, true);
   assert.equal(isolatedWorldCalls[0].injectImmediately, true);
+});
+
+test("install reinjection finishes before a concurrent pause reconciles CSS", async () => {
+  const mock = await loadWorker({ tabs: [{ id: 7, url: "https://example.org/" }] });
+  const insertCss = mock.chrome.scripting.insertCSS;
+  let releaseInjection;
+  let injectionStarted;
+  const gate = new Promise((resolve) => { releaseInjection = resolve; });
+  const started = new Promise((resolve) => { injectionStarted = resolve; });
+  mock.chrome.scripting.insertCSS = async (details) => {
+    if (details.files.includes("content/cosmetic.css")) { injectionStarted(); await gate; }
+    await insertCss(details);
+  };
+  mock.calls.cssInsertions.length = 0;
+  const install = mock.chrome.runtime.onInstalled.emit();
+  await started;
+  const pause = mock.message({ type: "settings:update", patch: { globalEnabled: false } });
+  try {
+    await settleAsyncWork();
+    assert.equal(mock.data.settings.globalEnabled, true, "pause waits for the pending installation injection");
+  } finally { releaseInjection(); }
+  await install;
+  const paused = await pause;
+  assert.equal(paused.settings.globalEnabled, false);
+  const insertionCount = mock.calls.cssInsertions.length;
+  await settleAsyncWork();
+  assert.equal(mock.calls.cssInsertions.length, insertionCount, "installation cannot apply enabled styles after pause");
 });
 
 test("reinjection isolates tab failures and falls back when USER-origin CSS is unavailable", async () => {
@@ -390,11 +494,49 @@ test("startup reconciliation preserves unrelated dynamic rules and coalesces own
   assert.deepEqual(Array.from(rules[3].condition.requestDomains), ["ads.example", "tracking.example"]);
 });
 
+test("unchanged network rules and CSS are not rewritten when changing between relaxed and balanced", async () => {
+  const mock = await loadWorker({ tabs: [{ id: 7, url: "https://example.org/" }] });
+  await mock.message({ type: "settings:update", patch: { level: "balanced" } });
+  mock.calls.enabledUpdates.length = 0;
+  mock.calls.dynamicUpdates.length = 0;
+  mock.calls.cssInsertions.length = 0;
+  mock.calls.cssRemovals.length = 0;
+  const result = await mock.message({ type: "settings:update", patch: { level: "relaxed" } });
+  assert.equal(result.networkHealth.status, "active");
+  assert.equal(result.settings.level, "relaxed");
+  assert.equal(mock.calls.enabledUpdates.length, 0);
+  assert.equal(mock.calls.dynamicUpdates.length, 0);
+  assert.equal(mock.calls.cssInsertions.length, 0);
+  assert.equal(mock.calls.cssRemovals.length, 0);
+});
+
+test("site pause changes conditional CSS only on affected tabs", async () => {
+  const mock = await loadWorker({ tabs: [
+    { id: 7, url: "https://example.org/" }, { id: 8, url: "https://news.example.org/article" },
+    { id: 9, url: "https://unrelated.org/" }
+  ] });
+  mock.calls.cssRemovals.length = 0;
+  await mock.message({ type: "site:setEnabled", hostname: "example.org", enabled: false });
+  assert.deepEqual([...new Set(mock.calls.cssRemovals.map(call => call.target.tabId))].sort(), [7, 8]);
+});
+
+test("toolbar receives aggregate live counts and navigation resets for the correct tab", async () => {
+  const mock = await loadWorker();
+  await mock.message({ type: "content:blocked", hostname: "example.org", count: 2 }, { tab: { id: 0 } });
+  await mock.message({ type: "content:blocked", hostname: "frame.example", count: 3 }, { tab: { id: 0 }, frameId: 4 });
+  await mock.chrome.tabs.onUpdated.emit(0, { status: "loading" });
+  assert.deepEqual(mock.calls.runtimeMessages.filter(message => message.type === "popup:pageCount"), [
+    { type: "popup:pageCount", tabId: 0, pageHidden: 2 },
+    { type: "popup:pageCount", tabId: 0, pageHidden: 5 },
+    { type: "popup:pageCount", tabId: 0, pageHidden: 0 }
+  ]);
+});
+
 test("failed network updates preserve stored settings, roll back rules, and leave the queue usable", async () => {
   const mock = await loadWorker();
   mock.failures.dynamicUpdates = 1;
 
-  const failed = await mock.message({ type: "settings:update", patch: { level: "relaxed" } });
+  const failed = await mock.message({ type: "settings:update", patch: { level: "relaxed", customBlockDomains: ["ads.example"] } });
   assert.equal(failed.ok, false);
   assert.match(failed.error, /Unable to apply protection settings: Dynamic rule update failed/);
   assert.equal(mock.data.settings.level, "strict");
@@ -404,6 +546,83 @@ test("failed network updates preserve stored settings, roll back rules, and leav
   assert.equal(recovered.settings.level, "relaxed");
   assert.equal(mock.data.settings.level, "relaxed");
   assert.equal(mock.enabledRulesets.has("privacy_strict"), false);
+});
+
+test("pause publishes settings after conditional CSS is removed", async () => {
+  const mock = await loadWorker({ tabs: [{ id: 7, url: "https://example.org/" }] });
+  const removeCss = mock.chrome.scripting.removeCSS;
+  let releaseRemoval;
+  let removalStarted;
+  const gate = new Promise((resolve) => { releaseRemoval = resolve; });
+  const started = new Promise((resolve) => { removalStarted = resolve; });
+  mock.chrome.scripting.removeCSS = async (details) => {
+    removalStarted();
+    await gate;
+    await removeCss(details);
+  };
+  const pause = mock.message({ type: "settings:update", patch: { globalEnabled: false } });
+  await started;
+  try {
+    // Storage listeners restore hidden nodes immediately. They must receive the
+    // paused state only after the USER styles no longer suppress shadow layout.
+    assert.equal(mock.data.settings.globalEnabled, true);
+  } finally { releaseRemoval(); }
+  const result = await pause;
+  assert.equal(result.settings.globalEnabled, false);
+  assert.equal(mock.data.settings.globalEnabled, false);
+});
+
+test("a frame becoming ready during pause cannot reinstall enabled CSS", async () => {
+  const mock = await loadWorker({ tabs: [{ id: 7, url: "https://example.org/" }] });
+  const removeCss = mock.chrome.scripting.removeCSS;
+  let releaseRemoval;
+  let removalStarted;
+  const gate = new Promise((resolve) => { releaseRemoval = resolve; });
+  const started = new Promise((resolve) => { removalStarted = resolve; });
+  mock.chrome.scripting.removeCSS = async (details) => {
+    if (details.target.allFrames) {
+      removalStarted();
+      await gate;
+    }
+    await removeCss(details);
+  };
+  mock.calls.cssInsertions.length = 0;
+  const pause = mock.message({ type: "settings:update", patch: { globalEnabled: false } });
+  await started;
+  let readyCompleted = false;
+  const ready = mock.message({ type: "content:ready" }, {
+    tab: { id: 7, url: "https://example.org/" }, frameId: 0
+  }).then((result) => { readyCompleted = true; return result; });
+  try {
+    await settleAsyncWork();
+    assert.equal(mock.data.settings.globalEnabled, true, "pause is still waiting for CSS removal");
+    assert.equal(readyCompleted, false, "frame reconciliation waits for the pending settings transaction");
+    assert.equal(mock.calls.cssInsertions.length, 0, "the frame cannot reapply the old enabled styles");
+  } finally { releaseRemoval(); }
+  const [paused, frame] = await Promise.all([pause, ready]);
+  assert.equal(paused.settings.globalEnabled, false);
+  assert.equal(frame.topLevelEnabled, false);
+  assert.equal(mock.calls.cssInsertions.length, 0, "paused frame reconciliation only removes CSS");
+});
+
+test("failed settings persistence restores network and conditional CSS", async () => {
+  const mock = await loadWorker({ tabs: [{ id: 7, url: "https://example.org/" }] });
+  const store = mock.chrome.storage.local.set;
+  let failOnce = true;
+  mock.chrome.storage.local.set = async (values) => {
+    if (failOnce && values.settings) { failOnce = false; throw new Error("Settings storage failed"); }
+    await store(values);
+  };
+  mock.calls.cssInsertions.length = 0;
+  const result = await mock.message({ type: "settings:update", patch: { globalEnabled: false } });
+  assert.equal(result.ok, false);
+  assert.equal(mock.data.settings.globalEnabled, true);
+  assert.equal(mock.enabledRulesets.has("privacy_strict"), true);
+  const restoredFiles = mock.calls.cssInsertions.flatMap((entry) => entry.files);
+  assert.equal(restoredFiles.includes("content/protection.css"), true);
+  assert.equal(restoredFiles.includes("content/strict.css"), true);
+  const recovered = await mock.message({ type: "settings:update", patch: { globalEnabled: false } });
+  assert.equal(recovered.settings.globalEnabled, false);
 });
 
 test("concurrent settings patches serialize without losing disjoint changes", async () => {
@@ -526,7 +745,7 @@ test("redirect blocks are counted and allow-once creates a tab-scoped session ru
 });
 
 test("dynamic reputation requires corroboration and resists duplicate and protected-domain poisoning", async () => {
-  const mock = await loadWorker();
+  const mock = await loadWorker({ initialData: { settings: { dynamicFiltering: true } } });
   const firstSender = { tab: { id: 41, url: "https://stream-one.example/watch" } };
   const secondSender = { tab: { id: 42, url: "https://stream-two.example/watch" } };
 

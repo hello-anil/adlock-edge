@@ -23,13 +23,24 @@ jobs:
       run: npm run benchmark:assert
     - name: Run extension UI smoke tests
       run: npx playwright test --project=chromium
+    - name: Verify standalone popup preview
+      run: npm run popup:preview:verify
     - name: Build release package
       run: npm run release:package
+    - name: Verify self-contained preview with partial host APIs
+      run: npm run popup:preview:verify -- --standalone --partial-chrome
+    - name: Verify critical fixes in the packaged extension
+      run: npm run critical:verify -- --packaged
+    - name: Verify toolbar functionality in the packaged extension
+      run: npm run popup:functionality:verify -- --packaged
     - uses: actions/upload-artifact@v4
       if: ${{ !cancelled() }}
       with:
         name: adlock-release-${{ github.sha }}
         path: |
           dist/*.zip
+          dist/adlock-preview-*.html
           playwright-report/
+          output/benchmarks/critical-regressions-*.json
+          output/benchmarks/popup-functionality-*.json
         retention-days: 30

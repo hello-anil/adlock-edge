@@ -1,7 +1,7 @@
 (function protectAgainstAdPopups() {
   "use strict";
 
-  const VERSION = "2.0.0";
+  const VERSION = "2.1.8";
   const OPEN_SHADOW_EVENT = "aas:open-shadow-root";
   const channel = document.documentElement?.getAttribute("data-aas-config-channel") || "";
   const CONFIG_EVENT = channel ? `aas:config:${channel}` : "aas:redirect-config";
@@ -171,15 +171,27 @@
   }
 
   function isPopupTarget(value) {
-    const target = String(value || "").trim().toLowerCase();
-    return Boolean(target) && !["_self", "_parent", "_top"].includes(target);
+    const target = String(value || "").trim();
+    const keyword = target.toLowerCase();
+    if (["_self", "_parent", "_top"].includes(keyword)) return false;
+    if (!target || keyword === "_blank") return true;
+    if (target === window.name) return false;
+    // Named embedded contexts are navigation targets, not new popup windows.
+    for (const tag of ["iframe", "frame"]) {
+      const frames = document.getElementsByTagName?.(tag) || [];
+      for (let index = 0; index < frames.length; index += 1) {
+        if (frames[index].getAttribute?.("name") === target && frames[index].contentWindow) return false;
+      }
+    }
+    return true;
   }
 
   function shouldBlockFormSubmission(form, submitter) {
     const action = submitter?.formAction || form?.action || location.href;
     const target = submitter?.formTarget || form?.target || "";
     const protectedDestination = isProtectedPopupProvider(action);
-    const unexpectedExternalPopup = isPopupTarget(target) && isExternalDestination(action) && !protectedDestination;
+    // Forms default to the current context; window.open defaults to a new one.
+    const unexpectedExternalPopup = isPopupTarget(target || "_self") && isExternalDestination(action) && !protectedDestination;
     return enabled && (isAdvertisingDestination(action) || unexpectedExternalPopup || isKnownBadInternalPath(action));
   }
 
@@ -246,15 +258,16 @@
   });
 
   function guardedOpen(url, target, features) {
+    const popupTarget = isPopupTarget(target);
     const externalDestination = isExternalDestination(url);
     const opaqueKind = opaquePopupKind(url);
     const userActive = Boolean(globalThis.navigator?.userActivation?.isActive);
     const expectedPopupDestination = consumeExpectedPopup(url);
     const protectedPopupDestination = isProtectedPopupProvider(url);
-    const unexpectedClickPopup = externalDestination && userActive && !expectedPopupDestination && !protectedPopupDestination;
-    const unsolicitedExternalPopup = externalDestination && !userActive && !expectedPopupDestination && !protectedPopupDestination;
+    const unexpectedClickPopup = popupTarget && externalDestination && userActive && !expectedPopupDestination && !protectedPopupDestination;
+    const unsolicitedExternalPopup = popupTarget && externalDestination && !userActive && !expectedPopupDestination && !protectedPopupDestination;
     const protectedBlankHandoff = opaqueKind === "blank" && userActive && isProtectedPopupContext();
-    const opaquePopupBypass = opaqueKind === "unsafe" || (opaqueKind === "blank" && !protectedBlankHandoff);
+    const opaquePopupBypass = opaqueKind === "unsafe" || (popupTarget && opaqueKind === "blank" && !protectedBlankHandoff);
     if (enabled && (isAdvertisingDestination(url) || unexpectedClickPopup || unsolicitedExternalPopup || opaquePopupBypass || isKnownBadInternalPath(url))) return null;
     return Reflect.apply(nativeOpen, window, [url, target, features]);
   }

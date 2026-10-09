@@ -2,6 +2,7 @@ import { access, cp, mkdir, readFile, rm, stat } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
+import { buildPopupPreview } from "./build-popup-preview.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const execFileAsync = promisify(execFile);
@@ -25,6 +26,27 @@ const add = (relativePath) => {
 add(manifest.background?.service_worker);
 add(manifest.action?.default_popup);
 add(manifest.options_page);
+// These styles are inserted programmatically and are not manifest resources.
+add("content/protection.css");
+add("content/strict.css");
+// Bundle the credit's comic font and its redistribution license.
+add("ui/fonts/bangers/Bangers-Regular.ttf");
+add("ui/fonts/bangers/OFL.txt");
+
+// HTML entry points load their own CSS and JavaScript, but those files are not
+// listed in the manifest. Include local linked assets so the packaged UI is
+// identical to the source UI instead of falling back to browser defaults.
+for (const htmlPath of [manifest.action?.default_popup, manifest.options_page].filter(Boolean)) {
+  const html = await readFile(path.join(root, htmlPath), "utf8");
+  const linkedAssets = [
+    ...html.matchAll(/\b(?:href|src)=["']([^"']+)["']/gi)
+  ];
+  for (const [, assetPath] of linkedAssets) {
+    if (/^(?:[a-z]+:|\/\/|#)/i.test(assetPath)) continue;
+    add(path.posix.join(path.posix.dirname(htmlPath.replaceAll("\\", "/")), assetPath));
+  }
+}
+
 for (const file of Object.values(manifest.icons || {})) add(file);
 for (const file of Object.values(manifest.action?.default_icon || {})) add(file);
 for (const declaration of manifest.content_scripts || []) {
@@ -49,6 +71,10 @@ if (checkOnly) {
   process.exit(0);
 }
 
+if (!/^\d+\.\d+\.\d+(?:\.\d+)?$/.test(version) ||
+    path.dirname(stagingDir) !== distDir || path.dirname(archivePath) !== distDir) {
+  throw new Error("Release paths must stay inside the dist directory");
+}
 await rm(stagingDir, { recursive: true, force: true });
 await rm(archivePath, { force: true });
 await mkdir(stagingDir, { recursive: true });
@@ -103,3 +129,5 @@ if (process.platform === "win32") {
 
 const archiveStat = await stat(archivePath);
 console.log(`Created ${path.relative(root, archivePath)} (${archiveStat.size} bytes) with ${sortedFiles.length} files.`);
+const previewPath = await buildPopupPreview(root, version);
+console.log(`Created self-contained preview: ${path.relative(root, previewPath)}.`);

@@ -10,11 +10,13 @@ async function createGuard(userActive = true, locationOverrides = {}) {
   const submissions = [];
   const shadowEvents = [];
   const configurationChannel = "testchannel123";
+  const frames = [];
   const document = {
     documentElement: {
       getAttribute(name) { return name === "data-aas-config-channel" ? configurationChannel : null; }
     },
-    addEventListener(type, listener) { listeners.set(type, listener); }
+    addEventListener(type, listener) { listeners.set(type, listener); },
+    getElementsByTagName(tag) { return frames.filter(frame => frame.tagName.toLowerCase() === tag); }
   };
   class FakeCustomEvent {
     constructor(type, init = {}) {
@@ -93,6 +95,11 @@ async function createGuard(userActive = true, locationOverrides = {}) {
     context,
     createHost: () => new FakeElement(),
     createForm: (action, target) => new FakeFormElement(action, target),
+    createFrame(name) {
+      const frame = { tagName: "IFRAME", contentWindow: {}, getAttribute(attribute) { return attribute === "name" ? name : null; } };
+      frames.push(frame);
+      return frame;
+    },
     reinject() { vm.runInNewContext(source, context, { filename }); },
     expectPopup(url, options = {}) {
       const type = options.type || "pointerdown";
@@ -215,6 +222,29 @@ test("universal click-under guard allows expected links and protected auth flows
   assert.notEqual(guard.window.open("https://docs.example.net/guide", "_blank"), null);
   assert.notEqual(guard.window.open("https://accounts.google.com/o/oauth2/authorize", "_blank"), null);
   assert.equal(guard.window.open("https://unknown-ad-destination.example/offer", "_blank"), null);
+});
+
+test("same-tab and named-frame navigation bypass popup-only heuristics", async () => {
+  const guard = await createGuard();
+  guard.configure(true);
+  const url = "https://docs.example.net/guide";
+  for (const target of ["_self", "_parent", "_top", "_SELF"]) {
+    assert.notEqual(guard.window.open(url, target), null, target);
+    assert.notEqual(guard.window.open("about:blank", target), null, target);
+    assert.equal(guard.window.open("https://doubleclick.net/offer", target), null, "known ads stay blocked");
+  }
+  guard.window.name = "ExistingWindow";
+  assert.notEqual(guard.window.open(url, "ExistingWindow"), null);
+  guard.createFrame("ResultFrame");
+  assert.notEqual(guard.window.open(url, "ResultFrame"), null);
+  assert.equal(guard.window.open(url, "resultframe"), null, "named targets are case-sensitive");
+  assert.equal(guard.window.open(url, "NewWindow"), null);
+  assert.equal(guard.window.open(url, "_blank"), null);
+  assert.equal(guard.window.open(url), null, "omitting a target creates a new popup");
+  guard.createForm(url, "ResultFrame").submit();
+  guard.createForm(url, "").submit();
+  guard.createForm(url, "_self").requestSubmit();
+  assert.equal(guard.submissions.length, 3, "forms without a target stay in their existing context");
 });
 
 test("main-world popup guard rejects unsolicited unknown external popups", async () => {

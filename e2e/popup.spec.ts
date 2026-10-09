@@ -6,7 +6,7 @@ const popupUrl = pathToFileURL(path.resolve(process.cwd(), "ui/popup.html")).hre
 const optionsUrl = pathToFileURL(path.resolve(process.cwd(), "ui/options.html")).href;
 
 for (const viewport of [
-  { name: "compact", width: 240, height: 420, allowVerticalScroll: true },
+  { name: "compact", width: 260, height: 420, allowVerticalScroll: true },
   { name: "narrow", width: 320, height: 480, allowVerticalScroll: true },
   { name: "standard", width: 368, height: 512, allowVerticalScroll: false },
   { name: "wide", width: 430, height: 700, allowVerticalScroll: false }

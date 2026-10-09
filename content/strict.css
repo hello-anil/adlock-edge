@@ -1,12 +1,10 @@
 /* Higher-recall cosmetic rules enabled only by Strict protection. */
+/* Generic disclosure classes and accessibility labels need the engine's context checks. */
 :where(
-  [aria-label*="advertisement" i],
-  [aria-label="sponsored" i],
   [data-sponsored="true" i],
   [data-promoted="true" i],
   [data-ad-background],
   [data-companion-ad],
-  [class~="advertisement" i],
   [class~="ad-container" i],
   [class~="ad_container" i],
   [class~="ad-wrapper" i],
