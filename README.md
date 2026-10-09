@@ -1,5 +1,8 @@
 # AdLock
 
+> [!TIP]
+> **Official extension:** [Install AdLock from Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/dknkhicpaggioijaimoapfdmcgggcbkm).
+
 Latest patch: **2.1.8** adds the compact Spider Royal card, a larger original logo, locally bundled comic-style fonts, golden spider web, and clearer paused controls. It retains the preview, settings synchronization, privacy, navigation, and filtering fixes from previous releases. Update the files in your existing unpacked folder, then click **Reload** at `edge://extensions` or `chrome://extensions` and reload open pages. Keep the existing registration to retain settings; export settings before removing an extension or switching folders.
 
 Block ads, trackers and unwanted popups with controls that stay on your device. Use the toolbar to pause a site or choose Relaxed, Balanced or Strict protection. If a page breaks, switch to Balanced or pause the site and reload.
